@@ -1,6 +1,6 @@
 """
 颱風警訊播報系統
-監控金門縣和台南市的颱風及天氣警報，以及金門機場即時起降資訊
+監控金門縣和台南市的颱風及天氣警報
 """
 
 import asyncio
@@ -47,7 +47,7 @@ async def lifespan(app):
     # FastAPI 關閉時可在這裡清理資源（如有需要）
     task.cancel()
 
-app = FastAPI(title="颱風警訊播報系統", description="監控金門縣和台南市的颱風警報及金門機場即時起降資訊", lifespan=lifespan)
+app = FastAPI(title="颱風警訊播報系統", description="監控金門縣和台南市的颱風警報", lifespan=lifespan)
 
 
 # 中央氣象署 API 設定
@@ -111,9 +111,10 @@ class FlexMessageBuilder:
         status_icon = "🔴" if result["status"] == "DANGER" else "🟢"
         status_text = "有風險" if result["status"] == "DANGER" else "無明顯風險"
         
-        # 分類警告訊息
-        flight_warnings = [w for w in result["warnings"] if any(keyword in w for keyword in ['起飛', '抵達', '航班', '停飛', '延誤', '機場API'])]
-        weather_warnings = [w for w in result["warnings"] if w not in flight_warnings]
+        # 分類警告訊息 (暫時隱藏機場功能)
+        # flight_warnings = [w for w in result["warnings"] if any(keyword in w for keyword in ['起飛', '抵達', '航班', '停飛', '延誤', '機場API'])]
+        # weather_warnings = [w for w in result["warnings"] if w not in flight_warnings]
+        weather_warnings = result["warnings"]  # 暫時所有警告都視為天氣警告
         
         # 風險等級顏色
         def get_risk_color(risk_text: str) -> str:
@@ -127,30 +128,31 @@ class FlexMessageBuilder:
         # 構建警告區塊
         warning_contents = []
         
-        if flight_warnings:
-            warning_contents.append({
-                "type": "box",
-                "layout": "vertical",
-                "margin": "md",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": "✈️ 金門機場即時狀況",
-                        "weight": "bold",
-                        "color": "#1976D2",
-                        "size": "sm"
-                    }
-                ] + [
-                    {
-                        "type": "text",
-                        "text": f"• {warning}",
-                        "size": "xs",
-                        "color": "#666666",
-                        "wrap": True,
-                        "margin": "xs"
-                    } for warning in flight_warnings[:3]  # 最多顯示3個警告
-                ]
-            })
+        # 暫時隱藏機場功能 - 註解掉機場警告顯示
+        # if flight_warnings:
+        #     warning_contents.append({
+        #         "type": "box",
+        #         "layout": "vertical",
+        #         "margin": "md",
+        #         "contents": [
+        #             {
+        #                 "type": "text",
+        #                 "text": "✈️ 金門機場即時狀況",
+        #                 "weight": "bold",
+        #                 "color": "#1976D2",
+        #                 "size": "sm"
+        #             }
+        #         ] + [
+        #             {
+        #                 "type": "text",
+        #                 "text": f"• {warning}",
+        #                 "size": "xs",
+        #                 "color": "#666666",
+        #                 "wrap": True,
+        #                 "margin": "xs"
+        #             } for warning in flight_warnings[:3]  # 最多顯示3個警告
+        #         ]
+        #     })
         
         if weather_warnings:
             warning_contents.append({
@@ -313,7 +315,7 @@ class FlexMessageBuilder:
                             }
                         ]
                     }
-                ] + warning_contents
+                ] + warning_contents + self._get_typhoon_details_flex_content()
             },
             "footer": {
                 "type": "box",
@@ -577,6 +579,363 @@ class FlexMessageBuilder:
         
         return FlexContainer.from_dict(flex_content)
 
+    def _get_typhoon_details_flex_content(self) -> List[Dict]:
+        """獲取颱風詳細資料的 Flex Message 內容"""
+        typhoon_contents = []
+        
+        # 從全域變數中取得颱風資料
+        global latest_typhoons, latest_weather, latest_alerts
+        typhoon_found = False
+        
+        if latest_typhoons:
+            try:
+                records = latest_typhoons.get('records', {})
+                
+                # 新的颱風資料結構
+                if 'tropicalCyclones' in records:
+                    tropical_cyclones = records['tropicalCyclones']
+                    typhoons = tropical_cyclones.get('tropicalCyclone', [])
+                    
+                    for typhoon in typhoons:
+                        if not isinstance(typhoon, dict):
+                            continue
+                        
+                        # 添加分隔線
+                        typhoon_contents.append({
+                            "type": "separator",
+                            "margin": "md"
+                        })
+                        
+                        # 颱風基本資訊
+                        typhoon_name = typhoon.get('typhoonName', '')
+                        cwa_typhoon_name = typhoon.get('cwaTyphoonName', '')
+                        cwa_td_no = typhoon.get('cwaTdNo', '')
+                        
+                        name = cwa_typhoon_name or typhoon_name or f"熱帶性低氣壓 {cwa_td_no}"
+                        
+                        # 添加颱風詳細資料標題
+                        typhoon_contents.append({
+                            "type": "box",
+                            "layout": "vertical",
+                            "margin": "md",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": f"📊 {name} 詳細資料",
+                                    "weight": "bold",
+                                    "color": "#1976D2",
+                                    "size": "sm"
+                                }
+                            ]
+                        })
+                        
+                        typhoon_found = True
+                        detail_items = []
+                        
+                        # 從最新分析資料取得詳細資訊
+                        analysis_data = typhoon.get('analysisData', {})
+                        fixes = analysis_data.get('fix', [])
+                        
+                        if fixes:
+                            latest_fix = fixes[-1]  # 取最新的資料
+                            
+                            # 風速資訊
+                            max_wind_speed = latest_fix.get('maxWindSpeed', '')
+                            max_gust_speed = latest_fix.get('maxGustSpeed', '')
+                            if max_wind_speed:
+                                max_wind_kmh = int(max_wind_speed) * 3.6
+                                detail_items.append(("💨", "最大風速", f"{max_wind_speed} m/s ({max_wind_kmh:.1f} km/h)"))
+                            if max_gust_speed:
+                                max_gust_kmh = int(max_gust_speed) * 3.6
+                                detail_items.append(("💨", "最大陣風", f"{max_gust_speed} m/s ({max_gust_kmh:.1f} km/h)"))
+                            
+                            # 中心氣壓
+                            pressure = latest_fix.get('pressure', '')
+                            if pressure:
+                                detail_items.append(("�", "中心氣壓", f"{pressure} hPa"))
+                            
+                            # 移動資訊
+                            moving_speed = latest_fix.get('movingSpeed', '')
+                            moving_direction = latest_fix.get('movingDirection', '')
+                            if moving_speed:
+                                detail_items.append(("🏃", "移動速度", f"{moving_speed} km/h"))
+                            if moving_direction:
+                                direction_map = {
+                                    'N': '北', 'NNE': '北北東', 'NE': '東北', 'ENE': '東北東',
+                                    'E': '東', 'ESE': '東南東', 'SE': '東南', 'SSE': '南南東',
+                                    'S': '南', 'SSW': '南南西', 'SW': '西南', 'WSW': '西南西',
+                                    'W': '西', 'WNW': '西北西', 'NW': '西北', 'NNW': '北北西'
+                                }
+                                direction_zh = direction_map.get(moving_direction, moving_direction)
+                                detail_items.append(("➡️", "移動方向", f"{direction_zh}"))
+                            
+                            # 座標位置
+                            coordinate = latest_fix.get('coordinate', '')
+                            if coordinate:
+                                try:
+                                    lon, lat = coordinate.split(',')
+                                    detail_items.append(("📍", "座標位置", f"{lat}°N, {lon}°E"))
+                                except:
+                                    detail_items.append(("📍", "座標位置", coordinate))
+                            
+                            # 暴風圈資訊
+                            circle_of_15ms = latest_fix.get('circleOf15Ms', {})
+                            if circle_of_15ms:
+                                radius = circle_of_15ms.get('radius', '')
+                                if radius:
+                                    detail_items.append(("�️", "暴風圈半徑", f"{radius} km"))
+                        
+                        # 生成詳細資料的 Flex 內容
+                        for icon, label, value in detail_items[:6]:  # 最多顯示6項避免過長
+                            typhoon_contents.append({
+                                "type": "box",
+                                "layout": "horizontal",
+                                "margin": "xs",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": icon,
+                                        "size": "xs",
+                                        "flex": 0
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": label,
+                                        "size": "xs",
+                                        "color": "#666666",
+                                        "margin": "sm",
+                                        "flex": 1
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": str(value),
+                                        "size": "xs",
+                                        "color": "#333333",
+                                        "weight": "bold",
+                                        "align": "end",
+                                        "flex": 1,
+                                        "wrap": True
+                                    }
+                                ]
+                            })
+                        
+                        # 只顯示第一個颱風資訊
+                        break
+            except Exception as e:
+                logger.warning(f"解析颱風詳細資料失敗: {e}")
+        
+        # 如果沒有颱風資料，顯示提示
+        if not typhoon_found:
+            typhoon_contents.extend([
+                {
+                    "type": "separator",
+                    "margin": "md"
+                },
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "margin": "md",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "📊 氣象資料",
+                            "weight": "bold",
+                            "color": "#1976D2",
+                            "size": "sm"
+                        },
+                        {
+                            "type": "text",
+                            "text": "🌀 目前無活躍颱風",
+                            "size": "xs",
+                            "color": "#666666",
+                            "margin": "xs"
+                        }
+                    ]
+                }
+            ])
+        
+        # 添加天氣原始資料
+        weather_data = self._get_weather_raw_data_flex()
+        if weather_data:
+            typhoon_contents.extend(weather_data)
+        
+        # 添加風險評估說明
+        typhoon_contents.extend([
+            {
+                "type": "separator",
+                "margin": "md"
+            },
+            {
+                "type": "box",
+                "layout": "vertical",
+                "margin": "md",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "📋 風險評估依據",
+                        "weight": "bold",
+                        "color": "#FF6B35",
+                        "size": "sm"
+                    },
+                    {
+                        "type": "text",
+                        "text": "• 颱風風速 >80km/h = 高風險\n• 颱風風速 60-80km/h = 中風險\n• 大雨/豪雨預報 = 中-高風險\n• 強風特報 = 中風險\n• 暴風圈範圍 = 高度關注",
+                        "size": "xs",
+                        "color": "#666666",
+                        "margin": "xs",
+                        "wrap": True
+                    }
+                ]
+            }
+        ])
+        
+        return typhoon_contents
+    
+    def _get_weather_raw_data_flex(self) -> List[Dict]:
+        """取得天氣原始資料的 Flex 內容"""
+        weather_contents = []
+        
+        try:
+            global latest_weather, latest_alerts
+            
+            # 添加天氣預報資料
+            if latest_weather and 'records' in latest_weather:
+                weather_items_found = False
+                
+                for location in latest_weather.get('records', {}).get('location', []):
+                    location_name = location.get('locationName', '')
+                    if location_name in MONITOR_LOCATIONS:
+                        if not weather_items_found:
+                            weather_contents.extend([
+                                {
+                                    "type": "separator",
+                                    "margin": "md"
+                                },
+                                {
+                                    "type": "box",
+                                    "layout": "vertical",
+                                    "margin": "md",
+                                    "contents": [
+                                        {
+                                            "type": "text",
+                                            "text": f"🌤️ {location_name} 天氣資料",
+                                            "weight": "bold",
+                                            "color": "#2E8B57",
+                                            "size": "sm"
+                                        }
+                                    ]
+                                }
+                            ])
+                            weather_items_found = True
+                        
+                        elements = location.get('weatherElement', [])
+                        weather_items = []
+                        
+                        for element in elements:
+                            element_name = element.get('elementName', '')
+                            times = element.get('time', [])
+                            
+                            if times:
+                                latest_time = times[0]
+                                value = latest_time.get('parameter', {}).get('parameterName', '')
+                                start_time = latest_time.get('startTime', '')
+                                
+                                if element_name == 'Wx' and value:  # 天氣現象
+                                    weather_items.append(("🌤️", "天氣", f"{value}"))
+                                elif element_name == 'PoP' and value:  # 降雨機率
+                                    weather_items.append(("🌧️", "降雨機率", f"{value}%"))
+                                elif element_name == 'MinT' and value:  # 最低溫度
+                                    weather_items.append(("🌡️", "最低溫", f"{value}°C"))
+                                elif element_name == 'MaxT' and value:  # 最高溫度
+                                    weather_items.append(("🌡️", "最高溫", f"{value}°C"))
+                        
+                        # 生成天氣資料的 Flex 內容
+                        for icon, label, value in weather_items[:4]:  # 最多顯示4項
+                            weather_contents.append({
+                                "type": "box",
+                                "layout": "horizontal",
+                                "margin": "xs",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": icon,
+                                        "size": "xs",
+                                        "flex": 0
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": label,
+                                        "size": "xs",
+                                        "color": "#666666",
+                                        "margin": "sm",
+                                        "flex": 1
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": str(value),
+                                        "size": "xs",
+                                        "color": "#333333",
+                                        "weight": "bold",
+                                        "align": "end",
+                                        "flex": 1,
+                                        "wrap": True
+                                    }
+                                ]
+                            })
+                        
+                        # 只顯示第一個地區的資料
+                        break
+            
+            # 添加特報資料
+            if latest_alerts and 'records' in latest_alerts:
+                alert_items_found = False
+                
+                for record in latest_alerts.get('records', {}).get('location', []):
+                    location_name = record.get('locationName', '')
+                    if location_name in MONITOR_LOCATIONS:
+                        hazards = record.get('hazardConditions', {}).get('hazards', [])
+                        if hazards and not alert_items_found:
+                            weather_contents.extend([
+                                {
+                                    "type": "separator",
+                                    "margin": "md"
+                                },
+                                {
+                                    "type": "box",
+                                    "layout": "vertical",
+                                    "margin": "md",
+                                    "contents": [
+                                        {
+                                            "type": "text",
+                                            "text": f"⚠️ {location_name} 特報",
+                                            "weight": "bold",
+                                            "color": "#FF4757",
+                                            "size": "sm"
+                                        }
+                                    ]
+                                }
+                            ])
+                            alert_items_found = True
+                            
+                            for hazard in hazards[:2]:  # 最多顯示2個特報
+                                phenomena = hazard.get('phenomena', '')
+                                significance = hazard.get('significance', '')
+                                if phenomena:
+                                    weather_contents.append({
+                                        "type": "text",
+                                        "text": f"📢 {phenomena} {significance}",
+                                        "size": "xs",
+                                        "color": "#FF4757",
+                                        "margin": "xs",
+                                        "wrap": True
+                                    })
+                            break
+                            
+        except Exception as e:
+            logger.warning(f"解析天氣原始資料失敗: {e}")
+        
+        return weather_contents
+
 class LineNotifier:
     def __init__(self):
         self.api_client = ApiClient(configuration)
@@ -596,27 +955,244 @@ class LineNotifier:
         message += f"---------------------------\n"
         message += f"{status_icon} 警告狀態: {status_text}\n\n"
         message += f"✈️ 7/6 金門→台南航班風險: {result['travel_risk']}\n"
-        message += f"🏥 7/7 台南體檢風險: {result['checkup_risk']}\n\n"
+        
+        # 處理可能包含詳細分析的體檢風險
+        checkup_risk = result['checkup_risk']
+        if "\n詳細分析:" in checkup_risk:
+            main_risk, details = checkup_risk.split("\n詳細分析:", 1)
+            message += f"🏥 7/7 台南體檢風險: {main_risk}\n"
+            message += f"   📊 地理分析: {details.strip()}\n"
+        else:
+            message += f"🏥 7/7 台南體檢風險: {checkup_risk}\n"
+        
+        message += "\n"
         
         if result["warnings"]:
-            # 分類警告訊息
-            flight_warnings = [w for w in result["warnings"] if any(keyword in w for keyword in ['起飛', '抵達', '航班', '停飛', '延誤', '機場API'])]
-            weather_warnings = [w for w in result["warnings"] if w not in flight_warnings]
+            # 暫時隱藏機場功能 - 所有警告都視為天氣警告
+            # flight_warnings = [w for w in result["warnings"] if any(keyword in w for keyword in ['起飛', '抵達', '航班', '停飛', '延誤', '機場API'])]
+            # weather_warnings = [w for w in result["warnings"] if w not in flight_warnings]
+            weather_warnings = result["warnings"]
             
-            if flight_warnings:
-                message += "✈️ 金門機場即時狀況:\n"
-                for warning in flight_warnings:
-                    message += f"• {warning}\n"
-                message += "\n"
+            # 暫時隱藏機場狀況顯示
+            # if flight_warnings:
+            #     message += "✈️ 金門機場即時狀況:\n"
+            #     for warning in flight_warnings:
+            #         message += f"• {warning}\n"
+            #     message += "\n"
             
             if weather_warnings:
                 message += "🌪️ 天氣警報:\n"
                 for warning in weather_warnings:
                     message += f"• {warning}\n"
+                message += "\n"
         else:
-            message += "✅ 目前無特殊警報\n"
+            message += "✅ 目前無特殊警報\n\n"
+        
+        # 添加颱風詳細資料
+        typhoon_details = self._get_typhoon_details()
+        if typhoon_details:
+            message += "📊 颱風詳細資料:\n"
+            message += typhoon_details
         
         return message.strip()
+    
+    def _get_typhoon_details(self) -> str:
+        """取得颱風詳細資料（風速、強度等）"""
+        details = ""
+        
+        # 從全域變數中取得颱風資料
+        if latest_typhoons:
+            try:
+                records = latest_typhoons.get('records', {})
+                typhoon_found = False
+                
+                # 新的颱風資料結構
+                if 'tropicalCyclones' in records:
+                    tropical_cyclones = records['tropicalCyclones']
+                    typhoons = tropical_cyclones.get('tropicalCyclone', [])
+                    
+                    for typhoon in typhoons:
+                        if not isinstance(typhoon, dict):
+                            continue
+                        
+                        # 颱風基本資訊
+                        typhoon_name = typhoon.get('typhoonName', '')
+                        cwa_typhoon_name = typhoon.get('cwaTyphoonName', '')
+                        cwa_td_no = typhoon.get('cwaTdNo', '')
+                        cwa_ty_no = typhoon.get('cwaTyNo', '')
+                        
+                        name = cwa_typhoon_name or typhoon_name or f"熱帶性低氣壓 {cwa_td_no}"
+                        details += f"🌀 名稱: {name}\n"
+                        typhoon_found = True
+                        
+                        if cwa_ty_no:
+                            details += f"�️ 颱風編號: {cwa_ty_no}\n"
+                        elif cwa_td_no:
+                            details += f"🏷️ 熱帶性低氣壓編號: {cwa_td_no}\n"
+                        
+                        # 從最新分析資料取得詳細資訊
+                        analysis_data = typhoon.get('analysisData', {})
+                        fixes = analysis_data.get('fix', [])
+                        
+                        if fixes:
+                            latest_fix = fixes[-1]  # 取最新的資料
+                            
+                            # 風速資訊
+                            max_wind_speed = latest_fix.get('maxWindSpeed', '')
+                            max_gust_speed = latest_fix.get('maxGustSpeed', '')
+                            if max_wind_speed:
+                                max_wind_kmh = int(max_wind_speed) * 3.6  # m/s 轉 km/h
+                                details += f"💨 最大風速: {max_wind_speed} m/s ({max_wind_kmh:.1f} km/h)\n"
+                            if max_gust_speed:
+                                max_gust_kmh = int(max_gust_speed) * 3.6
+                                details += f"💨 最大陣風: {max_gust_speed} m/s ({max_gust_kmh:.1f} km/h)\n"
+                            
+                            # 中心氣壓
+                            pressure = latest_fix.get('pressure', '')
+                            if pressure:
+                                details += f"📊 中心氣壓: {pressure} hPa\n"
+                            
+                            # 移動資訊
+                            moving_speed = latest_fix.get('movingSpeed', '')
+                            moving_direction = latest_fix.get('movingDirection', '')
+                            if moving_speed:
+                                details += f"🏃 移動速度: {moving_speed} km/h\n"
+                            if moving_direction:
+                                direction_map = {
+                                    'N': '北', 'NNE': '北北東', 'NE': '東北', 'ENE': '東北東',
+                                    'E': '東', 'ESE': '東南東', 'SE': '東南', 'SSE': '南南東',
+                                    'S': '南', 'SSW': '南南西', 'SW': '西南', 'WSW': '西南西',
+                                    'W': '西', 'WNW': '西北西', 'NW': '西北', 'NNW': '北北西'
+                                }
+                                direction_zh = direction_map.get(moving_direction, moving_direction)
+                                details += f"➡️ 移動方向: {direction_zh} ({moving_direction})\n"
+                            
+                            # 座標位置
+                            coordinate = latest_fix.get('coordinate', '')
+                            fix_time = latest_fix.get('fixTime', '')
+                            if coordinate:
+                                try:
+                                    lon, lat = coordinate.split(',')
+                                    details += f"📍 座標位置: {lat}°N, {lon}°E\n"
+                                except:
+                                    details += f"📍 座標位置: {coordinate}\n"
+                            
+                            if fix_time:
+                                details += f"🕐 觀測時間: {fix_time[:16]}\n"
+                        
+                        # 暴風圈資訊
+                        if fixes:
+                            latest_fix = fixes[-1]
+                            circle_of_15ms = latest_fix.get('circleOf15Ms', {})
+                            if circle_of_15ms:
+                                radius = circle_of_15ms.get('radius', '')
+                                if radius:
+                                    details += f"🌪️ 暴風圈半徑: {radius} km\n"
+                        
+                        # 只顯示第一個颱風的詳細資料
+                        break
+                
+                # 如果沒找到颱風資料，但有其他氣象資料
+                if not typhoon_found:
+                    details += "🌀 目前無活躍颱風資料\n"
+                    
+            except Exception as e:
+                logger.warning(f"解析颱風詳細資料失敗: {e}")
+        
+        # 添加天氣預報原始資料
+        weather_details = self._get_weather_raw_data()
+        if weather_details:
+            details += "\n📊 天氣原始資料:\n"
+            details += weather_details
+        
+        # 添加風險評估說明
+        if details:
+            details += "\n📋 風險評估依據:\n"
+            details += "• 颱風風速 >80km/h = 高風險\n"
+            details += "• 颱風風速 60-80km/h = 中風險\n"
+            details += "• 大雨/豪雨預報 = 中-高風險\n"
+            details += "• 強風特報 = 中風險\n"
+            details += "• 暴風圈範圍 = 高度關注\n"
+        
+        return details
+    
+    def _get_weather_raw_data(self) -> str:
+        """取得天氣預報原始資料"""
+        weather_info = ""
+        
+        try:
+            # 從天氣預報資料中提取原始數據
+            if latest_weather and 'records' in latest_weather:
+                for location in latest_weather.get('records', {}).get('location', []):
+                    location_name = location.get('locationName', '')
+                    if location_name in MONITOR_LOCATIONS:
+                        weather_info += f"\n🏃 {location_name}:\n"
+                        
+                        elements = location.get('weatherElement', [])
+                        for element in elements:
+                            element_name = element.get('elementName', '')
+                            times = element.get('time', [])
+                            
+                            if element_name == 'Wx' and times:  # 天氣現象
+                                latest_time = times[0]
+                                weather_desc = latest_time.get('parameter', {}).get('parameterName', '')
+                                start_time = latest_time.get('startTime', '')
+                                if weather_desc:
+                                    weather_info += f"  🌤️ 天氣: {weather_desc}\n"
+                                    weather_info += f"  🕐 時間: {start_time[:16]}\n"
+                            
+                            elif element_name == 'PoP' and times:  # 降雨機率
+                                latest_time = times[0]
+                                pop_value = latest_time.get('parameter', {}).get('parameterName', '')
+                                if pop_value:
+                                    weather_info += f"  🌧️ 降雨機率: {pop_value}%\n"
+                            
+                            elif element_name == 'MinT' and times:  # 最低溫度
+                                latest_time = times[0]
+                                min_temp = latest_time.get('parameter', {}).get('parameterName', '')
+                                if min_temp:
+                                    weather_info += f"  🌡️ 最低溫: {min_temp}°C\n"
+                            
+                            elif element_name == 'MaxT' and times:  # 最高溫度
+                                latest_time = times[0]
+                                max_temp = latest_time.get('parameter', {}).get('parameterName', '')
+                                if max_temp:
+                                    weather_info += f"  �️ 最高溫: {max_temp}°C\n"
+                            
+                            elif element_name == 'CI' and times:  # 舒適度指數
+                                latest_time = times[0]
+                                comfort = latest_time.get('parameter', {}).get('parameterName', '')
+                                if comfort:
+                                    weather_info += f"  😌 舒適度: {comfort}\n"
+                        
+                        weather_info += "\n"
+            
+            # 從天氣特報中提取原始資料
+            if latest_alerts and 'records' in latest_alerts:
+                alert_info = ""
+                for record in latest_alerts.get('records', {}).get('location', []):
+                    location_name = record.get('locationName', '')
+                    if location_name in MONITOR_LOCATIONS:
+                        hazards = record.get('hazardConditions', {}).get('hazards', [])
+                        if hazards:
+                            alert_info += f"⚠️ {location_name} 特報:\n"
+                            for hazard in hazards:
+                                phenomena = hazard.get('phenomena', '')
+                                significance = hazard.get('significance', '')
+                                effective_time = hazard.get('effectiveTime', '')
+                                if phenomena:
+                                    alert_info += f"  📢 {phenomena} {significance}\n"
+                                    if effective_time:
+                                        alert_info += f"  🕐 生效時間: {effective_time[:16]}\n"
+                            alert_info += "\n"
+                
+                if alert_info:
+                    weather_info += alert_info
+                    
+        except Exception as e:
+            logger.warning(f"解析天氣原始資料失敗: {e}")
+        
+        return weather_info.strip()
     
     async def push_typhoon_status_flex(self, result: Dict):
         """推送颱風狀態 Flex Message 給所有好友"""
@@ -1030,31 +1606,81 @@ class TyphoonMonitor:
             return warnings
         
         try:
-            for typhoon in typhoon_data.get('records', {}).get('typhoon', []):
-                name = typhoon.get('typhoonName', '未知颱風')
-                intensity = typhoon.get('intensity', {})
-                max_wind = intensity.get('maximumWind', {}).get('value', 0)
+            records = typhoon_data.get('records', {})
+            
+            # 新的颱風資料結構
+            if 'tropicalCyclones' in records:
+                tropical_cyclones = records['tropicalCyclones']
+                typhoons = tropical_cyclones.get('tropicalCyclone', [])
                 
-                # 如果最大風速超過一定值，發出警告
-                # 金門機場側風停飛標準：25節(46.3 km/h)，暴風圈標準：34節(63 km/h)
-                if max_wind > 60:  # km/h - 調整為更實際的航班風險閾值
-                    if max_wind > 80:
-                        warnings.append(f"🌀 {name}颱風 最大風速: {max_wind} km/h (航班高風險)")
-                    else:
-                        warnings.append(f"🌀 {name}颱風 最大風速: {max_wind} km/h (航班可能影響)")
+                for typhoon in typhoons:
+                    if not isinstance(typhoon, dict):
+                        continue
                     
-                    # 檢查預報路徑是否影響目標區域
-                    forecasts = typhoon.get('forecast', [])
-                    for forecast in forecasts:
-                        location = forecast.get('location', {})
-                        lat = location.get('lat', 0)
-                        lon = location.get('lon', 0)
+                    # 取得颱風名稱
+                    typhoon_name = typhoon.get('typhoonName', '')
+                    cwa_typhoon_name = typhoon.get('cwaTyphoonName', '')
+                    name = cwa_typhoon_name or typhoon_name or '未知熱帶氣旋'
+                    
+                    # 從最新分析資料取得風速
+                    analysis_data = typhoon.get('analysisData', {})
+                    fixes = analysis_data.get('fix', [])
+                    
+                    if fixes:
+                        latest_fix = fixes[-1]  # 取最新的資料
+                        max_wind_speed = int(latest_fix.get('maxWindSpeed', 0))
+                        pressure = latest_fix.get('pressure', '')
+                        moving_speed = latest_fix.get('movingSpeed', '')
+                        moving_direction = latest_fix.get('movingDirection', '')
+                        coordinate = latest_fix.get('coordinate', '')
+                        fix_time = latest_fix.get('fixTime', '')
                         
-                        # 簡單的地理區域判斷（台灣範圍）
-                        if 22 <= lat <= 25.5 and 119 <= lon <= 122:
-                            forecast_time = forecast.get('time', '')
-                            warnings.append(f"📍 {name}颱風預報將於 {forecast_time} 接近台灣")
-                            break
+                        # 檢查風速是否超過警戒值
+                        # 將 m/s 轉換為 km/h (乘以 3.6)
+                        max_wind_kmh = max_wind_speed * 3.6
+                        
+                        if max_wind_kmh > 60:  # km/h
+                            if max_wind_kmh > 80:
+                                warnings.append(f"🌀 {name}颱風 最大風速: {max_wind_speed} m/s ({max_wind_kmh:.1f} km/h) - 高風險")
+                            else:
+                                warnings.append(f"🌀 {name}颱風 最大風速: {max_wind_speed} m/s ({max_wind_kmh:.1f} km/h) - 可能影響")
+                        
+                        # 檢查預報路徑是否接近台灣
+                        forecast_data = typhoon.get('forecastData', {})
+                        forecast_fixes = forecast_data.get('fix', [])
+                        
+                        for forecast in forecast_fixes:
+                            if not isinstance(forecast, dict):
+                                continue
+                            coordinate = forecast.get('coordinate', '')
+                            if coordinate:
+                                try:
+                                    lon, lat = map(float, coordinate.split(','))
+                                    # 簡單的地理區域判斷（台灣及周邊範圍）
+                                    if 119 <= lon <= 122 and 22 <= lat <= 25.5:
+                                        tau = forecast.get('tau', '')
+                                        warnings.append(f"📍 {name}颱風預報將在 {tau} 小時後接近台灣區域")
+                                        break
+                                except:
+                                    continue
+            
+            # 舊的颱風資料結構（向後兼容）
+            elif 'typhoon' in records:
+                typhoons = records.get('typhoon', [])
+                for typhoon in typhoons:
+                    if not isinstance(typhoon, dict):
+                        continue
+                        
+                    name = typhoon.get('typhoonName', '未知颱風')
+                    intensity = typhoon.get('intensity', {})
+                    max_wind = intensity.get('maximumWind', {}).get('value', 0)
+                    
+                    if max_wind > 60:  # km/h
+                        if max_wind > 80:
+                            warnings.append(f"🌀 {name}颱風 最大風速: {max_wind} km/h (高風險)")
+                        else:
+                            warnings.append(f"🌀 {name}颱風 最大風速: {max_wind} km/h (可能影響)")
+                            
         except Exception as e:
             logger.error(f"分析颱風資料失敗: {e}")
         
@@ -1092,34 +1718,36 @@ class TyphoonMonitor:
         """檢查所有條件"""
         logger.info("開始檢查天氣條件...")
         
-        # 並行取得所有資料
+        # 並行取得所有資料 (暫時隱藏機場功能)
         alerts_task = self.get_weather_alerts()
         typhoons_task = self.get_typhoon_paths()
         weather_task = self.get_weather_forecast()
-        departure_task = airport_monitor.get_departure_info()
-        arrival_task = airport_monitor.get_arrival_info()
+        # departure_task = airport_monitor.get_departure_info()
+        # arrival_task = airport_monitor.get_arrival_info()
         
-        alerts_data, typhoons_data, weather_data, departure_data, arrival_data = await asyncio.gather(
-            alerts_task, typhoons_task, weather_task, departure_task, arrival_task, return_exceptions=True
+        alerts_data, typhoons_data, weather_data = await asyncio.gather(
+            alerts_task, typhoons_task, weather_task, return_exceptions=True
         )
         
-        # 更新全域狀態
-        global latest_alerts, latest_typhoons, latest_weather, latest_airport_departure, latest_airport_arrival, last_notification_status
+        # 更新全域狀態 (暫時隱藏機場資料)
+        global latest_alerts, latest_typhoons, latest_weather, last_notification_status
+        # global latest_airport_departure, latest_airport_arrival
         latest_alerts = alerts_data if not isinstance(alerts_data, Exception) else {}
         latest_typhoons = typhoons_data if not isinstance(typhoons_data, Exception) else {}
         latest_weather = weather_data if not isinstance(weather_data, Exception) else {}
-        latest_airport_departure = departure_data if not isinstance(departure_data, Exception) else {}
-        latest_airport_arrival = arrival_data if not isinstance(arrival_data, Exception) else {}
+        # latest_airport_departure = departure_data if not isinstance(departure_data, Exception) else {}
+        # latest_airport_arrival = arrival_data if not isinstance(arrival_data, Exception) else {}
         
-        # 分析機場資料
-        flight_warnings = airport_monitor.analyze_flight_status(latest_airport_departure, latest_airport_arrival)
+        # 暫時隱藏機場分析
+        # flight_warnings = airport_monitor.analyze_flight_status(latest_airport_departure, latest_airport_arrival)
         
         # 分析所有資料
         alert_warnings = self.analyze_alerts(latest_alerts)
         typhoon_warnings = self.analyze_typhoons(latest_typhoons)
         weather_warnings = self.analyze_weather(latest_weather)
         
-        all_warnings = alert_warnings + typhoon_warnings + weather_warnings + flight_warnings
+        # all_warnings = alert_warnings + typhoon_warnings + weather_warnings + flight_warnings
+        all_warnings = alert_warnings + typhoon_warnings + weather_warnings
         
         result = {
             "timestamp": datetime.now().isoformat(),
@@ -1173,7 +1801,28 @@ class TyphoonMonitor:
             return "中風險 - 持續監控"
     
     def assess_checkup_risk(self, warnings: List[str]) -> str:
-        """評估7/7體檢風險"""
+        """評估7/7體檢風險（改進版）"""
+        from datetime import datetime, timedelta
+        import math
+        
+        # 台南市座標 (約略中心位置)
+        tainan_lat = 23.0
+        tainan_lon = 120.2
+        checkup_date = datetime(2025, 7, 7)
+        
+        # 基本風險評估（原有邏輯）
+        basic_risk = self._assess_basic_risk(warnings)
+        
+        # 颱風地理風險評估
+        typhoon_risk = self._assess_typhoon_geographic_risk(tainan_lat, tainan_lon, checkup_date)
+        
+        # 綜合評估
+        final_risk = self._combine_risk_assessments(basic_risk, typhoon_risk)
+        
+        return final_risk
+    
+    def _assess_basic_risk(self, warnings: List[str]) -> str:
+        """基本風險評估（保留原有邏輯）"""
         if not warnings:
             return "低風險"
         
@@ -1185,6 +1834,189 @@ class TyphoonMonitor:
                     return "中風險 - 可能影響交通"
         
         return "低風險"
+    
+    def _assess_typhoon_geographic_risk(self, tainan_lat: float, tainan_lon: float, target_date: datetime) -> dict:
+        """地理位置颱風風險評估"""
+        import math
+        from datetime import datetime, timedelta
+        
+        risk_info = {
+            "level": "低風險",
+            "distance": None,
+            "wind_threat": False,
+            "time_threat": False,
+            "details": []
+        }
+        
+        try:
+            global latest_typhoons
+            if not latest_typhoons or 'records' not in latest_typhoons:
+                return risk_info
+            
+            records = latest_typhoons.get('records', {})
+            if 'tropicalCyclones' not in records:
+                return risk_info
+            
+            tropical_cyclones = records['tropicalCyclones']
+            typhoons = tropical_cyclones.get('tropicalCyclone', [])
+            
+            for typhoon in typhoons:
+                if not isinstance(typhoon, dict):
+                    continue
+                
+                name = typhoon.get('cwaTyphoonName') or typhoon.get('typhoonName') or '未知颱風'
+                
+                # 分析當前位置和強度
+                analysis_data = typhoon.get('analysisData', {})
+                fixes = analysis_data.get('fix', [])
+                
+                if fixes:
+                    latest_fix = fixes[-1]
+                    
+                    # 計算距離
+                    coordinate = latest_fix.get('coordinate', '')
+                    if coordinate:
+                        try:
+                            lon, lat = map(float, coordinate.split(','))
+                            distance = self._calculate_distance(lat, lon, tainan_lat, tainan_lon)
+                            risk_info["distance"] = distance
+                            
+                            # 風速威脅評估
+                            max_wind_speed = int(latest_fix.get('maxWindSpeed', 0))
+                            wind_speed_kmh = max_wind_speed * 3.6
+                            
+                            # 暴風圈影響評估
+                            storm_circle = latest_fix.get('circleOf15Ms', {})
+                            storm_radius = float(storm_circle.get('radius', 0)) if storm_circle else 0
+                            
+                            # 判斷風速威脅
+                            if distance < storm_radius:
+                                risk_info["wind_threat"] = True
+                                risk_info["details"].append(f"🌪️ {name} 暴風圈影響台南（距離{distance:.0f}km < 半徑{storm_radius}km）")
+                            elif distance < 200 and wind_speed_kmh > 80:
+                                risk_info["wind_threat"] = True
+                                risk_info["details"].append(f"💨 {name} 強風威脅台南（距離{distance:.0f}km，風速{wind_speed_kmh:.0f}km/h）")
+                            
+                            # 預報路徑時間威脅評估
+                            forecast_data = typhoon.get('forecastData', {})
+                            forecast_fixes = forecast_data.get('fix', [])
+                            
+                            for forecast in forecast_fixes:
+                                if not isinstance(forecast, dict):
+                                    continue
+                                
+                                tau = forecast.get('tau', '')
+                                if not tau:
+                                    continue
+                                
+                                try:
+                                    hours_ahead = int(tau)
+                                    forecast_time = datetime.now() + timedelta(hours=hours_ahead)
+                                    
+                                    # 檢查是否在體檢日期附近（前後24小時）
+                                    time_diff = abs((forecast_time - target_date).total_seconds() / 3600)
+                                    
+                                    if time_diff <= 24:  # 24小時內
+                                        forecast_coord = forecast.get('coordinate', '')
+                                        if forecast_coord:
+                                            f_lon, f_lat = map(float, forecast_coord.split(','))
+                                            forecast_distance = self._calculate_distance(f_lat, f_lon, tainan_lat, tainan_lon)
+                                            
+                                            forecast_wind = int(forecast.get('maxWindSpeed', 0)) * 3.6
+                                            forecast_circle = forecast.get('circleOf15Ms', {})
+                                            forecast_radius = float(forecast_circle.get('radius', 0)) if forecast_circle else 0
+                                            
+                                            if forecast_distance < forecast_radius or (forecast_distance < 150 and forecast_wind > 60):
+                                                risk_info["time_threat"] = True
+                                                risk_info["details"].append(f"⏰ {name} 預計{forecast_time.strftime('%m/%d %H時')}影響台南（距離{forecast_distance:.0f}km）")
+                                
+                                except (ValueError, TypeError):
+                                    continue
+                        
+                        except (ValueError, IndexError):
+                            continue
+            
+            # 綜合判斷風險等級
+            if risk_info["wind_threat"] and risk_info["time_threat"]:
+                risk_info["level"] = "極高風險"
+            elif risk_info["wind_threat"]:
+                risk_info["level"] = "高風險"
+            elif risk_info["time_threat"]:
+                risk_info["level"] = "中風險"
+            elif risk_info["distance"] and risk_info["distance"] < 300:
+                risk_info["level"] = "低-中風險"
+        
+        except Exception as e:
+            logger.error(f"地理風險評估失敗: {e}")
+        
+        return risk_info
+    
+    def _calculate_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """計算兩點間距離（公里）"""
+        import math
+        
+        # 地球半徑（公里）
+        R = 6371.0
+        
+        # 轉換為弧度
+        lat1_rad = math.radians(lat1)
+        lon1_rad = math.radians(lon1)
+        lat2_rad = math.radians(lat2)
+        lon2_rad = math.radians(lon2)
+        
+        # 計算差值
+        dlat = lat2_rad - lat1_rad
+        dlon = lon2_rad - lon1_rad
+        
+        # Haversine 公式
+        a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+        
+        return R * c
+    
+    def _combine_risk_assessments(self, basic_risk: str, typhoon_risk: dict) -> str:
+        """綜合風險評估"""
+        # 風險等級優先順序
+        risk_levels = {
+            "低風險": 0,
+            "低-中風險": 1,
+            "中風險": 2,
+            "高風險": 3,
+            "極高風險": 4
+        }
+        
+        # 取得基本風險等級
+        basic_level = 0
+        if "高風險" in basic_risk:
+            basic_level = 3
+        elif "中風險" in basic_risk:
+            basic_level = 2
+        else:
+            basic_level = 0
+        
+        # 取得颱風地理風險等級
+        geo_level = risk_levels.get(typhoon_risk["level"], 0)
+        
+        # 取較高的風險等級
+        final_level = max(basic_level, geo_level)
+        
+        # 組合最終風險描述
+        if final_level >= 4:
+            result = "極高風險 - 強烈建議延期"
+        elif final_level >= 3:
+            result = "高風險 - 建議考慮延期"
+        elif final_level >= 2:
+            result = "中風險 - 可能影響交通"
+        elif final_level >= 1:
+            result = "低-中風險 - 需關注發展"
+        else:
+            result = "低風險"
+        
+        # 添加地理威脅詳情
+        if typhoon_risk["details"]:
+            result += "\n詳細分析: " + "; ".join(typhoon_risk["details"])
+        
+        return result
     
     def print_alerts(self, result: Dict):
         """在控制台輸出警報"""
@@ -1215,7 +2047,8 @@ class TyphoonMonitor:
 
 # 建立監控器實例
 monitor = TyphoonMonitor()
-airport_monitor = AirportMonitor()
+# 暫時隱藏機場監控功能（API 尚未申請）
+# airport_monitor = AirportMonitor()
 
 async def continuous_monitoring():
     """持續監控"""
@@ -1255,26 +2088,27 @@ def handle_message(event):
         
         asyncio.create_task(handle_typhoon_status())
     
-    elif "機場狀況" in message_text:
-        async def handle_airport_status():
-            try:
-                departure_info = await airport_monitor.get_departure_info()
-                arrival_info = await airport_monitor.get_arrival_info()
-                flight_warnings = await airport_monitor.check_flight_conditions()
-                
-                airport_data = {
-                    "departure_flights": departure_info,
-                    "arrival_flights": arrival_info,
-                    "warnings": flight_warnings,
-                    "last_updated": datetime.now().isoformat()
-                }
-                
-                await line_notifier.push_airport_status_flex(airport_data)
-            except Exception as e:
-                logger.error(f"處理機場狀況失敗: {e}")
-                await line_notifier.reply_message(event.reply_token, "無法取得機場資料，請稍後再試。")
-        
-        asyncio.create_task(handle_airport_status())
+    # 暫時隱藏機場功能
+    # elif "機場狀況" in message_text:
+    #     async def handle_airport_status():
+    #         try:
+    #             departure_info = await airport_monitor.get_departure_info()
+    #             arrival_info = await airport_monitor.get_arrival_info()
+    #             flight_warnings = await airport_monitor.check_flight_conditions()
+    #             
+    #             airport_data = {
+    #                 "departure_flights": departure_info,
+    #                 "arrival_flights": arrival_info,
+    #                 "warnings": flight_warnings,
+    #                 "last_updated": datetime.now().isoformat()
+    #             }
+    #             
+    #             await line_notifier.push_airport_status_flex(airport_data)
+    #         except Exception as e:
+    #             logger.error(f"處理機場狀況失敗: {e}")
+    #             await line_notifier.reply_message(event.reply_token, "無法取得機場資料，請稍後再試。")
+    #     
+    #     asyncio.create_task(handle_airport_status())
     
     elif "測試" in message_text:
         async def handle_test():
@@ -1291,7 +2125,6 @@ def handle_message(event):
 
 可用指令：
 • 颱風近況 - 查看完整監控狀況
-• 機場狀況 - 查看金門機場即時資訊  
 • 測試 - 發送測試訊息
 • 幫助 - 顯示此指令列表
 
@@ -1341,7 +2174,7 @@ async def get_dashboard():
         <meta http-equiv="refresh" content="60">
         <style>
             body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
-            .container {{ max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }}
+            .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }}
             .status-safe {{ color: green; font-size: 24px; font-weight: bold; }}
             .status-danger {{ color: red; font-size: 24px; font-weight: bold; }}
             .warning-item {{ background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 5px 0; border-radius: 5px; }}
@@ -1352,6 +2185,27 @@ async def get_dashboard():
             .explain-block {{ background: #e3f2fd; border-left: 5px solid #1976d2; padding: 16px; margin: 24px 0; border-radius: 8px; }}
             .explain-block h2 {{ margin-top: 0; color: #1976d2; }}
             .explain-block ul {{ margin: 0 0 0 1.5em; }}
+            .raw-data-section {{ margin: 24px 0; }}
+            .raw-data-block {{ background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; margin: 16px 0; }}
+            .raw-data-title {{ font-size: 18px; font-weight: bold; color: #495057; margin-bottom: 12px; display: flex; align-items: center; }}
+            .raw-data-title span {{ margin-right: 8px; }}
+            .data-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin: 12px 0; }}
+            .data-item {{ background: white; border: 1px solid #e9ecef; border-radius: 6px; padding: 12px; }}
+            .data-item-label {{ font-weight: bold; color: #6c757d; font-size: 14px; margin-bottom: 4px; }}
+            .data-item-value {{ color: #212529; font-size: 16px; word-wrap: break-word; }}
+            .typhoon-data {{ border-left: 4px solid #dc3545; }}
+            .weather-data {{ border-left: 4px solid #28a745; }}
+            .alert-data {{ border-left: 4px solid #ffc107; }}
+            .no-data {{ color: #6c757d; font-style: italic; text-align: center; padding: 20px; }}
+            .collapsible {{ cursor: pointer; background: none; border: none; width: 100%; text-align: left; font-size: 18px; font-weight: bold; color: #495057; }}
+            .collapsible:hover {{ background-color: #f1f3f4; }}
+            .collapsible.active {{ background-color: #e9ecef; }}
+            .content {{ display: none; overflow: hidden; }}
+            .content.show {{ display: block; }}
+            .toggle-icon {{ float: right; transition: transform 0.3s; }}
+            .toggle-icon.rotated {{ transform: rotate(90deg); }}
+            .risk-explanation {{ background: #fff8e1; border: 1px solid #ffcc02; border-radius: 8px; padding: 16px; margin: 16px 0; }}
+            .risk-explanation h3 {{ margin-top: 0; color: #f57c00; }}
         </style>
     </head>
     <body>
@@ -1362,6 +2216,56 @@ async def get_dashboard():
             <div id="travelRisk">載入中...</div>
             <div id="checkupRisk">載入中...</div>
             <div id="warnings">載入中...</div>
+
+            <!-- 原始氣象資料區塊 -->
+            <div class="raw-data-section">
+                <h2>📊 原始氣象資料</h2>
+                
+                <!-- 颱風資料 -->
+                <div class="raw-data-block">
+                    <button class="collapsible" onclick="toggleContent('typhoon-content')">
+                        <span>🌀</span> 颱風詳細資料
+                        <span class="toggle-icon" id="typhoon-toggle">▶</span>
+                    </button>
+                    <div class="content" id="typhoon-content">
+                        <div id="typhoonData" class="typhoon-data">載入中...</div>
+                    </div>
+                </div>
+
+                <!-- 天氣預報資料 -->
+                <div class="raw-data-block">
+                    <button class="collapsible" onclick="toggleContent('weather-content')">
+                        <span>🌤️</span> 天氣預報資料
+                        <span class="toggle-icon" id="weather-toggle">▶</span>
+                    </button>
+                    <div class="content" id="weather-content">
+                        <div id="weatherData" class="weather-data">載入中...</div>
+                    </div>
+                </div>
+
+                <!-- 特報資料 -->
+                <div class="raw-data-block">
+                    <button class="collapsible" onclick="toggleContent('alert-content')">
+                        <span>⚠️</span> 天氣特報資料
+                        <span class="toggle-icon" id="alert-toggle">▶</span>
+                    </button>
+                    <div class="content" id="alert-content">
+                        <div id="alertData" class="alert-data">載入中...</div>
+                    </div>
+                </div>
+
+                <!-- 風險評估說明 -->
+                <div class="risk-explanation">
+                    <h3>📋 風險評估依據</h3>
+                    <ul>
+                        <li><strong>颱風風速 &gt;80km/h</strong> = 高風險</li>
+                        <li><strong>颱風風速 60-80km/h</strong> = 中風險</li>
+                        <li><strong>大雨/豪雨預報</strong> = 中-高風險</li>
+                        <li><strong>強風特報</strong> = 中風險</li>
+                        <li><strong>暴風圈範圍</strong> = 高度關注</li>
+                    </ul>
+                </div>
+            </div>
 
             <div class="explain-block">
                 <h2>🔎 分析邏輯與方法說明</h2>
@@ -1401,6 +2305,221 @@ async def get_dashboard():
             </div>
         </div>
         <script>
+            function toggleContent(contentId) {{
+                const content = document.getElementById(contentId);
+                const toggleIcon = document.getElementById(contentId.replace('-content', '-toggle'));
+                
+                if (content.classList.contains('show')) {{
+                    content.classList.remove('show');
+                    toggleIcon.classList.remove('rotated');
+                }} else {{
+                    content.classList.add('show');
+                    toggleIcon.classList.add('rotated');
+                }}
+            }}
+
+            function formatRawData(data, type) {{
+                if (!data || Object.keys(data).length === 0) {{
+                    return '<div class="no-data">目前無資料</div>';
+                }}
+
+                if (type === 'typhoon') {{
+                    return formatTyphoonData(data);
+                }} else if (type === 'weather') {{
+                    return formatWeatherData(data);
+                }} else if (type === 'alert') {{
+                    return formatAlertData(data);
+                }}
+                
+                return '<div class="no-data">無法解析資料</div>';
+            }}
+
+            function formatTyphoonData(data) {{
+                let html = '';
+                try {{
+                    const records = data.records || {{}};
+                    
+                    if (records.tropicalCyclones && records.tropicalCyclones.tropicalCyclone) {{
+                        const typhoons = records.tropicalCyclones.tropicalCyclone;
+                        
+                        typhoons.forEach((typhoon, index) => {{
+                            const name = typhoon.cwaTyphoonName || typhoon.typhoonName || '未知熱帶氣旋';
+                            const tyNo = typhoon.cwaTyNo || typhoon.cwaTdNo || '';
+                            
+                            html += `<div class="data-grid">`;
+                            html += `<div class="data-item"><div class="data-item-label">🌀 颱風名稱</div><div class="data-item-value">${{name}}</div></div>`;
+                            
+                            if (tyNo) {{
+                                html += `<div class="data-item"><div class="data-item-label">🏷️ 編號</div><div class="data-item-value">${{tyNo}}</div></div>`;
+                            }}
+                            
+                            const analysisData = typhoon.analysisData || {{}};
+                            const fixes = analysisData.fix || [];
+                            
+                            if (fixes.length > 0) {{
+                                const latestFix = fixes[fixes.length - 1];
+                                
+                                if (latestFix.maxWindSpeed) {{
+                                    const windKmh = (parseInt(latestFix.maxWindSpeed) * 3.6).toFixed(1);
+                                    html += `<div class="data-item"><div class="data-item-label">💨 最大風速</div><div class="data-item-value">${{latestFix.maxWindSpeed}} m/s (${{windKmh}} km/h)</div></div>`;
+                                }}
+                                
+                                if (latestFix.maxGustSpeed) {{
+                                    const gustKmh = (parseInt(latestFix.maxGustSpeed) * 3.6).toFixed(1);
+                                    html += `<div class="data-item"><div class="data-item-label">💨 最大陣風</div><div class="data-item-value">${{latestFix.maxGustSpeed}} m/s (${{gustKmh}} km/h)</div></div>`;
+                                }}
+                                
+                                if (latestFix.pressure) {{
+                                    html += `<div class="data-item"><div class="data-item-label">📊 中心氣壓</div><div class="data-item-value">${{latestFix.pressure}} hPa</div></div>`;
+                                }}
+                                
+                                if (latestFix.movingSpeed) {{
+                                    html += `<div class="data-item"><div class="data-item-label">🏃 移動速度</div><div class="data-item-value">${{latestFix.movingSpeed}} km/h</div></div>`;
+                                }}
+                                
+                                if (latestFix.movingDirection) {{
+                                    const directionMap = {{
+                                        'N': '北', 'NNE': '北北東', 'NE': '東北', 'ENE': '東北東',
+                                        'E': '東', 'ESE': '東南東', 'SE': '東南', 'SSE': '南南東',
+                                        'S': '南', 'SSW': '南南西', 'SW': '西南', 'WSW': '西南西',
+                                        'W': '西', 'WNW': '西北西', 'NW': '西北', 'NNW': '北北西'
+                                    }};
+                                    const directionZh = directionMap[latestFix.movingDirection] || latestFix.movingDirection;
+                                    html += `<div class="data-item"><div class="data-item-label">➡️ 移動方向</div><div class="data-item-value">${{directionZh}}</div></div>`;
+                                }}
+                                
+                                if (latestFix.coordinate) {{
+                                    try {{
+                                        const [lon, lat] = latestFix.coordinate.split(',');
+                                        html += `<div class="data-item"><div class="data-item-label">📍 座標位置</div><div class="data-item-value">${{lat}}°N, ${{lon}}°E</div></div>`;
+                                    }} catch (e) {{
+                                        html += `<div class="data-item"><div class="data-item-label">📍 座標位置</div><div class="data-item-value">${{latestFix.coordinate}}</div></div>`;
+                                    }}
+                                }}
+                                
+                                if (latestFix.circleOf15Ms && latestFix.circleOf15Ms.radius) {{
+                                    html += `<div class="data-item"><div class="data-item-label">🌪️ 暴風圈半徑</div><div class="data-item-value">${{latestFix.circleOf15Ms.radius}} km</div></div>`;
+                                }}
+                                
+                                if (latestFix.fixTime) {{
+                                    html += `<div class="data-item"><div class="data-item-label">🕐 觀測時間</div><div class="data-item-value">${{latestFix.fixTime.substring(0, 16)}}</div></div>`;
+                                }}
+                            }}
+                            
+                            html += `</div>`;
+                            if (index < typhoons.length - 1) html += '<hr style="margin: 20px 0;">';
+                        }});
+                    }} else {{
+                        html = '<div class="no-data">🌀 目前無活躍颱風</div>';
+                    }}
+                }} catch (error) {{
+                    console.error('解析颱風資料失敗:', error);
+                    html = '<div class="no-data">解析颱風資料失敗</div>';
+                }}
+                
+                return html;
+            }}
+
+            function formatWeatherData(data) {{
+                let html = '';
+                try {{
+                    const records = data.records || {{}};
+                    const locations = records.location || [];
+                    
+                    if (locations.length === 0) {{
+                        return '<div class="no-data">無天氣預報資料</div>';
+                    }}
+                    
+                    locations.forEach((location, index) => {{
+                        const locationName = location.locationName || '未知地區';
+                        const elements = location.weatherElement || [];
+                        
+                        html += `<h4>${{locationName}}</h4>`;
+                        html += `<div class="data-grid">`;
+                        
+                        elements.forEach(element => {{
+                            const elementName = element.elementName || '';
+                            const times = element.time || [];
+                            
+                            if (times.length > 0) {{
+                                const latestTime = times[0];
+                                const value = latestTime.parameter?.parameterName || '';
+                                const startTime = latestTime.startTime || '';
+                                
+                                if (elementName === 'Wx' && value) {{
+                                    html += `<div class="data-item"><div class="data-item-label">🌤️ 天氣現象</div><div class="data-item-value">${{value}}</div></div>`;
+                                    html += `<div class="data-item"><div class="data-item-label">🕐 預報時間</div><div class="data-item-value">${{startTime.substring(0, 16)}}</div></div>`;
+                                }} else if (elementName === 'PoP' && value) {{
+                                    html += `<div class="data-item"><div class="data-item-label">🌧️ 降雨機率</div><div class="data-item-value">${{value}}%</div></div>`;
+                                }} else if (elementName === 'MinT' && value) {{
+                                    html += `<div class="data-item"><div class="data-item-label">🌡️ 最低溫度</div><div class="data-item-value">${{value}}°C</div></div>`;
+                                }} else if (elementName === 'MaxT' && value) {{
+                                    html += `<div class="data-item"><div class="data-item-label">🌡️ 最高溫度</div><div class="data-item-value">${{value}}°C</div></div>`;
+                                }} else if (elementName === 'CI' && value) {{
+                                    html += `<div class="data-item"><div class="data-item-label">😌 舒適度</div><div class="data-item-value">${{value}}</div></div>`;
+                                }}
+                            }}
+                        }});
+                        
+                        html += `</div>`;
+                        if (index < locations.length - 1) html += '<hr style="margin: 20px 0;">';
+                    }});
+                }} catch (error) {{
+                    console.error('解析天氣資料失敗:', error);
+                    html = '<div class="no-data">解析天氣資料失敗</div>';
+                }}
+                
+                return html;
+            }}
+
+            function formatAlertData(data) {{
+                let html = '';
+                try {{
+                    const records = data.records || {{}};
+                    const locations = records.location || [];
+                    
+                    if (locations.length === 0) {{
+                        return '<div class="no-data">無特報資料</div>';
+                    }}
+                    
+                    locations.forEach((location, index) => {{
+                        const locationName = location.locationName || '未知地區';
+                        const hazards = location.hazardConditions?.hazards || [];
+                        
+                        if (hazards.length > 0) {{
+                            html += `<h4>${{locationName}}</h4>`;
+                            html += `<div class="data-grid">`;
+                            
+                            hazards.forEach(hazard => {{
+                                const phenomena = hazard.phenomena || '';
+                                const significance = hazard.significance || '';
+                                const effectiveTime = hazard.effectiveTime || '';
+                                
+                                if (phenomena) {{
+                                    html += `<div class="data-item"><div class="data-item-label">📢 特報類型</div><div class="data-item-value">${{phenomena}} ${{significance}}</div></div>`;
+                                    if (effectiveTime) {{
+                                        html += `<div class="data-item"><div class="data-item-label">🕐 生效時間</div><div class="data-item-value">${{effectiveTime.substring(0, 16)}}</div></div>`;
+                                    }}
+                                }}
+                            }});
+                            
+                            html += `</div>`;
+                        }}
+                        
+                        if (index < locations.length - 1) html += '<hr style="margin: 20px 0;">';
+                    }});
+                    
+                    if (html === '') {{
+                        html = '<div class="no-data">目前無特報資料</div>';
+                    }}
+                }} catch (error) {{
+                    console.error('解析特報資料失敗:', error);
+                    html = '<div class="no-data">解析特報資料失敗</div>';
+                }}
+                
+                return html;
+            }}
+
             async function updateData() {{
                 try {{
                     const response = await fetch('/api/status');
@@ -1421,6 +2540,15 @@ async def get_dashboard():
                     }} else {{
                         warningsDiv.innerHTML = '<h3>✅ 目前無特殊警報</h3>';
                     }}
+
+                    // 更新原始資料
+                    const rawDataResponse = await fetch('/api/raw-data');
+                    const rawData = await rawDataResponse.json();
+                    
+                    document.getElementById('typhoonData').innerHTML = formatRawData(rawData.typhoons, 'typhoon');
+                    document.getElementById('weatherData').innerHTML = formatRawData(rawData.weather, 'weather');
+                    document.getElementById('alertData').innerHTML = formatRawData(rawData.alerts, 'alert');
+                    
                 }} catch (error) {{
                     console.error('更新資料失敗:', error);
                 }}
@@ -1474,52 +2602,54 @@ async def send_test_notification():
         "friends": line_user_ids
     }
 
-@app.post("/api/line/test-airport-notification")
-async def send_test_airport_notification():
-    """發送機場狀況測試通知給所有LINE好友"""
-    try:
-        departure_info = await airport_monitor.get_departure_info()
-        arrival_info = await airport_monitor.get_arrival_info()
-        flight_warnings = await airport_monitor.check_flight_conditions()
-        
-        airport_data = {
-            "departure_flights": departure_info,
-            "arrival_flights": arrival_info,
-            "warnings": flight_warnings,
-            "last_updated": datetime.now().isoformat()
-        }
-        
-        await line_notifier.push_airport_status_flex(airport_data)
-        
-        return {
-            "message": "機場狀況 Flex Message 已發送",
-            "sent_to": len(line_user_ids),
-            "airport_data": {
-                "departure_count": len(departure_info) if isinstance(departure_info, list) else 0,
-                "arrival_count": len(arrival_info) if isinstance(arrival_info, list) else 0,
-                "warnings_count": len(flight_warnings)
-            }
-        }
-    except Exception as e:
-        logger.error(f"發送機場測試通知失敗: {e}")
-        return {
-            "error": "發送失敗",
-            "message": str(e)
-        }
+# 暫時隱藏機場測試端點
+# @app.post("/api/line/test-airport-notification")
+# async def send_test_airport_notification():
+#     """發送機場狀況測試通知給所有LINE好友"""
+#     try:
+#         departure_info = await airport_monitor.get_departure_info()
+#         arrival_info = await airport_monitor.get_arrival_info()
+#         flight_warnings = await airport_monitor.check_flight_conditions()
+#         
+#         airport_data = {
+#             "departure_flights": departure_info,
+#             "arrival_flights": arrival_info,
+#             "warnings": flight_warnings,
+#             "last_updated": datetime.now().isoformat()
+#         }
+#         
+#         await line_notifier.push_airport_status_flex(airport_data)
+#         
+#         return {
+#             "message": "機場狀況 Flex Message 已發送",
+#             "sent_to": len(line_user_ids),
+#             "airport_data": {
+#                 "departure_count": len(departure_info) if isinstance(departure_info, list) else 0,
+#                 "arrival_count": len(arrival_info) if isinstance(arrival_info, list) else 0,
+#                 "warnings_count": len(flight_warnings)
+#             }
+#         }
+#     except Exception as e:
+#         logger.error(f"發送機場測試通知失敗: {e}")
+#         return {
+#             "error": "發送失敗",
+#             "message": str(e)
+#         }
 
-@app.get("/api/airport")
-async def get_airport_status():
-    """取得金門機場即時起降資訊"""
-    departure_info = await airport_monitor.get_departure_info()
-    arrival_info = await airport_monitor.get_arrival_info()
-    flight_warnings = await airport_monitor.check_flight_conditions()
-    
-    return {
-        "departure_flights": departure_info,
-        "arrival_flights": arrival_info,
-        "warnings": flight_warnings,
-        "last_updated": datetime.now().isoformat()
-    }
+# 暫時隱藏機場端點
+# @app.get("/api/airport")
+# async def get_airport_status():
+#     """取得金門機場即時起降資訊"""
+#     departure_info = await airport_monitor.get_departure_info()
+#     arrival_info = await airport_monitor.get_arrival_info()
+#     flight_warnings = await airport_monitor.check_flight_conditions()
+#     
+#     return {
+#         "departure_flights": departure_info,
+#         "arrival_flights": arrival_info,
+#         "warnings": flight_warnings,
+#         "last_updated": datetime.now().isoformat()
+#     }
 
 def main():
     """主函數"""
@@ -1530,7 +2660,7 @@ def main():
     print(f"- 服務端口: {SERVER_PORT}")
     print(f"- 旅行日期: {TRAVEL_DATE}")
     print(f"- 體檢日期: {CHECKUP_DATE}")
-    print("- 機場監控: 金門機場 (KNH) 起降資訊")
+    # print("- 機場監控: 金門機場 (KNH) 起降資訊")  # 暫時隱藏
     print("- 通知方式: LINE Bot Flex Message (支援視覺化通知)")
     
     if not API_KEY:
@@ -1540,7 +2670,7 @@ def main():
     
     print("\n📱 LINE Bot 觸發關鍵字:")
     print("- '颱風近況' - 查看完整監控狀況 (Flex Message)")
-    print("- '機場狀況' - 查看金門機場即時資訊 (Flex Message)")
+    # print("- '機場狀況' - 查看金門機場即時資訊 (Flex Message)")  # 暫時隱藏
     print("- '測試' - 發送測試訊息 (Flex Message)")
     print("- '幫助' / 'help' / '指令' - 顯示指令列表")
     print("📝 注意: Bot 只回應特定關鍵字，不會回覆所有訊息")
@@ -1548,7 +2678,7 @@ def main():
     print("\n🔗 API 端點:")
     print(f"- 監控儀表板: http://localhost:{SERVER_PORT}/")
     print(f"- 測試 Flex 通知: POST http://localhost:{SERVER_PORT}/api/line/test-notification")
-    print(f"- 測試機場 Flex 通知: POST http://localhost:{SERVER_PORT}/api/line/test-airport-notification")
+    # print(f"- 測試機場 Flex 通知: POST http://localhost:{SERVER_PORT}/api/line/test-airport-notification")  # 暫時隱藏
     
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=SERVER_PORT)
