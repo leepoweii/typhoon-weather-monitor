@@ -1285,18 +1285,22 @@ def handle_message(event):
         
         asyncio.create_task(handle_test())
     
-    else:
-        # 預設回覆
+    elif "幫助" in message_text or "help" in message_text.lower() or "指令" in message_text:
+        # 只在用戶明確要求幫助時才回覆指令列表
         help_message = """🌀 颱風警訊播報系統
 
 可用指令：
 • 颱風近況 - 查看完整監控狀況
 • 機場狀況 - 查看金門機場即時資訊  
 • 測試 - 發送測試訊息
+• 幫助 - 顯示此指令列表
 
 系統會在有風險時主動推送通知！"""
         
         asyncio.create_task(line_notifier.reply_message(event.reply_token, help_message))
+    
+    # 移除預設回覆 - 只對特定關鍵字回應
+    # 不需要對每個訊息都回覆
 
 @app.post("/webhook")
 async def line_webhook(request: Request):
@@ -1534,10 +1538,12 @@ def main():
     if not LINE_CHANNEL_ACCESS_TOKEN:
         print("⚠️ 警告: LINE ACCESS TOKEN尚未設定，LINE功能將無法使用")
     
-    print("\n📱 LINE Bot 指令:")
+    print("\n📱 LINE Bot 觸發關鍵字:")
     print("- '颱風近況' - 查看完整監控狀況 (Flex Message)")
     print("- '機場狀況' - 查看金門機場即時資訊 (Flex Message)")
     print("- '測試' - 發送測試訊息 (Flex Message)")
+    print("- '幫助' / 'help' / '指令' - 顯示指令列表")
+    print("📝 注意: Bot 只回應特定關鍵字，不會回覆所有訊息")
     
     print("\n🔗 API 端點:")
     print(f"- 監控儀表板: http://localhost:{SERVER_PORT}/")
