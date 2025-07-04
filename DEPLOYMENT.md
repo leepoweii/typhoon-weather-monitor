@@ -1,14 +1,82 @@
-# 部署確認 - 颱風警訊播報系統
+# 🌀 颱風警訊播報系統 + ✈️ 金門機場監控
 
-## ✅ 已完成最佳化
+## 🚀 Zeabur 部署成功！
 
-### 部署簡化
-- ✅ **移除 Dockerfile**：Zeabur 可以完全依靠 `zbpack.json` 進行部署
-- ✅ **優化 zbpack.json**：包含完整的 Python 環境配置
-- ✅ **簡化依賴管理**：僅需 `requirements.txt` 即可
+您的系統已成功部署到 Zeabur！
 
-### 檔案結構
+**部署 URL**: https://zeabur.com/projects/6867c29f3d3c8eb2f89e17d2/services/6867c2a00446dd4191a464fe?envID=6867c29f383ae96484bde431
+
+## ⚙️ 必要設置 - 環境變數
+
+為了讓系統正常運作，請在 Zeabur 控制台設置以下環境變數：
+
+### 🌡️ 中央氣象署 API (可選，但建議設置)
 ```
+CWA_API_KEY=您的氣象署API金鑰
+```
+> 取得方式：前往 [中央氣象署開放資料平臺](https://opendata.cwa.gov.tw) 註冊並申請 API 金鑰
+
+### 📱 LINE Bot 設定 (用於推送通知)
+```
+LINE_CHANNEL_ID=您的LINE頻道ID
+LINE_CHANNEL_SECRET=您的LINE頻道密鑰
+LINE_CHANNEL_ACCESS_TOKEN=您的LINE存取權杖
+```
+> 取得方式：前往 [LINE Developers](https://developers.line.biz/) 創建 Messaging API 頻道
+
+### 🔧 系統設定 (可選)
+```
+CHECK_INTERVAL=300
+TRAVEL_DATE=2025-07-06
+CHECKUP_DATE=2025-07-07
+MONITOR_LOCATIONS=金門縣,臺南市
+```
+
+## 📋 功能特色
+
+✅ **即時監控**
+- 🌪️ 金門縣、台南市颱風警報
+- ✈️ 金門機場起降即時資訊
+- ⏰ 航班延誤自動檢測
+- 🚫 停飛/取消即時通知
+
+✅ **智能警報**
+- 延誤超過30分鐘自動警告
+- 颱風路徑影響評估
+- 航班風險等級分析
+- LINE 即時推送通知
+
+✅ **Web 儀表板**
+- 即時狀態查看
+- 詳細分析邏輯說明
+- API 端點查詢
+
+## 🔗 API 端點
+
+- `/` - Web 儀表板
+- `/api/status` - 完整監控狀態
+- `/api/airport` - 金門機場即時資訊
+- `/api/raw-data` - 原始資料
+- `/webhook` - LINE Bot Webhook
+
+## 🎯 使用場景
+
+完美適合：
+- 金門-台灣航班旅客
+- 需要關注天氣的商務人士
+- 颱風季節的旅行規劃
+- 機場延誤即時監控
+
+## 🚀 重新部署
+
+如需更新代碼：
+
+```bash
+cd /path/to/typhoon-weather-monitor
+npx zeabur@latest
+```
+
+選擇現有專案即可更新部署。
 typhoon-app/
 ├── app.py              # 主程式 - FastAPI 應用
 ├── zbpack.json         # Zeabur 部署配置 (無需 Dockerfile)

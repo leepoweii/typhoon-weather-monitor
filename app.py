@@ -1,6 +1,6 @@
 """
 颱風警訊播報系統
-監控金門縣和台南市的颱風及天氣警報
+監控金門縣和台南市的颱風及天氣警報，以及金門機場即時起降資訊
 """
 
 import asyncio
@@ -43,7 +43,7 @@ async def lifespan(app):
     # FastAPI 關閉時可在這裡清理資源（如有需要）
     task.cancel()
 
-app = FastAPI(title="颱風警訊播報系統", description="監控金門縣和台南市的颱風警報", lifespan=lifespan)
+app = FastAPI(title="颱風警訊播報系統", description="監控金門縣和台南市的颱風警報及金門機場即時起降資訊", lifespan=lifespan)
 
 
 # 中央氣象署 API 設定
@@ -67,12 +67,16 @@ MONITOR_LOCATIONS = [s.strip() for s in os.getenv("MONITOR_LOCATIONS", "金門�
 CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "300").split("#")[0].strip())
 TRAVEL_DATE = os.getenv("TRAVEL_DATE", "2025-07-06")
 CHECKUP_DATE = os.getenv("CHECKUP_DATE", "2025-07-07")
-SERVER_PORT = int(os.getenv("SERVER_PORT", "8000").split("#")[0].strip())
+SERVER_PORT = int(os.getenv("PORT", os.getenv("SERVER_PORT", "8000")).split("#")[0].strip())
 
 # 全域變數儲存最新狀態
 latest_alerts = {}
 latest_weather = {}
 latest_typhoons = {}
+latest_airport_departure = {}
+latest_airport_arrival = {}
+latest_airport_update_time = None
+airport_api_status = "未知"  # "正常", "異常", "未知"
 last_notification_status = "SAFE"  # 追蹤上次通知的狀態
 line_user_ids = []  # 儲存所有好友的USER ID
 
@@ -94,9 +98,20 @@ class LineNotifier:
         message += f"🏥 7/7 台南體檢風險: {result['checkup_risk']}\n\n"
         
         if result["warnings"]:
-            message += "📢 當前警報:\n"
-            for warning in result["warnings"]:
-                message += f"• {warning}\n"
+            # 分類警告訊息
+            flight_warnings = [w for w in result["warnings"] if any(keyword in w for keyword in ['起飛', '抵達', '航班', '停飛', '延誤'])]
+            weather_warnings = [w for w in result["warnings"] if w not in flight_warnings]
+            
+            if flight_warnings:
+                message += "� 金門機場即時狀況:\n"
+                for warning in flight_warnings:
+                    message += f"• {warning}\n"
+                message += "\n"
+            
+            if weather_warnings:
+                message += "🌪️ 天氣警報:\n"
+                for warning in weather_warnings:
+                    message += f"• {warning}\n"
         else:
             message += "✅ 目前無特殊警報\n"
         
@@ -133,6 +148,227 @@ class LineNotifier:
 
 # 初始化LINE通知器
 line_notifier = LineNotifier()
+
+class AirportMonitor:
+    """金門機場起降資訊監控器"""
+    
+    def __init__(self):
+        # 設定SSL驗證為False以解決macOS的SSL問題
+        self.client = httpx.AsyncClient(timeout=30.0, verify=False)
+        self.base_url = "https://tdx.transportdata.tw/api/basic/v2/Air/FIDS/Airport"
+        
+    async def get_departure_info(self) -> Dict:
+        """取得金門機場起飛航班資訊"""
+        try:
+            url = f"{self.base_url}/Departure/KNH?$format=JSON"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            }
+            response = await self.client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            # 更新全域狀態
+            global latest_airport_departure, latest_airport_update_time, airport_api_status
+            latest_airport_departure = data
+            latest_airport_update_time = datetime.now()
+            airport_api_status = "正常"
+            
+            logger.info(f"成功取得金門機場起飛資訊，共 {len(data) if isinstance(data, list) else 0} 筆航班")
+            return data
+        except Exception as e:
+            logger.warning(f"取得金門機場起飛資訊失敗: {e}")
+            global airport_api_status
+            airport_api_status = "異常"
+            return latest_airport_departure  # 返回最後一次成功的資料
+    
+    async def get_arrival_info(self) -> Dict:
+        """取得金門機場抵達航班資訊"""
+        try:
+            url = f"{self.base_url}/Arrival/KNH?$format=JSON"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            }
+            response = await self.client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            # 更新全域狀態
+            global latest_airport_arrival, latest_airport_update_time, airport_api_status
+            latest_airport_arrival = data
+            latest_airport_update_time = datetime.now()
+            airport_api_status = "正常"
+            
+            logger.info(f"成功取得金門機場抵達資訊，共 {len(data) if isinstance(data, list) else 0} 筆航班")
+            return data
+        except Exception as e:
+            logger.warning(f"取得金門機場抵達資訊失敗: {e}")
+            global airport_api_status
+            airport_api_status = "異常"
+            return latest_airport_arrival  # 返回最後一次成功的資料
+            return {}
+    
+    def analyze_flight_status(self, departure_data: Dict, arrival_data: Dict) -> List[str]:
+        """分析航班狀態，檢查停飛或延誤情況"""
+        warnings = []
+        
+        # 檢查 API 狀態並添加相應的警告
+        global airport_api_status, latest_airport_update_time
+        if airport_api_status == "異常":
+            if latest_airport_update_time:
+                last_update = latest_airport_update_time.strftime('%Y-%m-%d %H:%M')
+                warnings.append(f"⚠️ 機場API連線異常，使用最後更新資料 ({last_update})")
+            else:
+                warnings.append(f"⚠️ 機場API連線異常，無法取得航班資料")
+                return warnings
+        elif airport_api_status == "正常" and latest_airport_update_time:
+            # 如果資料超過10分鐘沒更新，也提醒
+            time_diff = (datetime.now() - latest_airport_update_time).total_seconds() / 60
+            if time_diff > 10:
+                warnings.append(f"📅 機場資料已 {int(time_diff)} 分鐘未更新")
+        
+        # 目的地機場代碼對應
+        airport_names = {
+            'TSA': '松山',
+            'TPE': '桃園', 
+            'KHH': '高雄',
+            'TNN': '台南',
+            'CYI': '嘉義',
+            'RMQ': '馬公',
+            'KNH': '金門'
+        }
+        
+        # 分析起飛航班
+        if departure_data and isinstance(departure_data, list):
+            for flight in departure_data:
+                try:
+                    airline_id = flight.get('AirlineID', '')
+                    flight_number = flight.get('FlightNumber', '')
+                    destination_code = flight.get('ArrivalAirportID', '')
+                    destination = airport_names.get(destination_code, destination_code)
+                    schedule_time = flight.get('ScheduleDepartureTime', '')
+                    actual_time = flight.get('ActualDepartureTime', '')
+                    estimated_time = flight.get('EstimatedDepartureTime', '')
+                    remark = flight.get('DepartureRemark', '')
+                    gate = flight.get('Gate', '')
+                    
+                    # 檢查停飛或取消狀況
+                    if remark and any(keyword in remark for keyword in ['取消', '停飛', 'CANCELLED', '暫停']):
+                        warnings.append(f"✈️ 起飛停飛: {airline_id}{flight_number} → {destination} ({schedule_time[:16]}) - {remark}")
+                    
+                    # 檢查延誤狀況（實際時間與排定時間差異）
+                    elif actual_time and schedule_time:
+                        try:
+                            from datetime import datetime
+                            schedule_dt = datetime.fromisoformat(schedule_time)
+                            actual_dt = datetime.fromisoformat(actual_time)
+                            delay_minutes = (actual_dt - schedule_dt).total_seconds() / 60
+                            
+                            # 延誤超過30分鐘才警告
+                            if delay_minutes >= 30:
+                                warnings.append(f"⏰ 起飛延誤: {airline_id}{flight_number} → {destination} 延誤 {int(delay_minutes)} 分鐘")
+                        except:
+                            pass
+                    
+                    # 檢查預計時間延誤
+                    elif estimated_time and schedule_time and not actual_time:
+                        try:
+                            from datetime import datetime
+                            schedule_dt = datetime.fromisoformat(schedule_time)
+                            estimated_dt = datetime.fromisoformat(estimated_time)
+                            delay_minutes = (estimated_dt - schedule_dt).total_seconds() / 60
+                            
+                            if delay_minutes >= 30:
+                                warnings.append(f"⏰ 起飛預計延誤: {airline_id}{flight_number} → {destination} 預計延誤 {int(delay_minutes)} 分鐘")
+                        except:
+                            pass
+                    
+                    # 檢查特殊狀態備註
+                    if remark and any(keyword in remark for keyword in ['延誤', '異常', '等待', '暫緩']):
+                        warnings.append(f"📝 起飛狀況: {airline_id}{flight_number} → {destination} - {remark}")
+                
+                except Exception as e:
+                    logger.error(f"分析起飛航班失敗: {e}")
+        
+        # 分析抵達航班
+        if arrival_data and isinstance(arrival_data, list):
+            for flight in arrival_data:
+                try:
+                    airline_id = flight.get('AirlineID', '')
+                    flight_number = flight.get('FlightNumber', '')
+                    origin_code = flight.get('DepartureAirportID', '')
+                    origin = airport_names.get(origin_code, origin_code)
+                    schedule_time = flight.get('ScheduleArrivalTime', '')
+                    actual_time = flight.get('ActualArrivalTime', '')
+                    estimated_time = flight.get('EstimatedArrivalTime', '')
+                    remark = flight.get('ArrivalRemark', '')
+                    gate = flight.get('Gate', '')
+                    
+                    # 檢查停飛或取消狀況
+                    if remark and any(keyword in remark for keyword in ['取消', '停飛', 'CANCELLED', '暫停']):
+                        warnings.append(f"🛬 抵達停飛: {airline_id}{flight_number} ← {origin} ({schedule_time[:16]}) - {remark}")
+                    
+                    # 檢查延誤狀況（實際時間與排定時間差異）
+                    elif actual_time and schedule_time:
+                        try:
+                            from datetime import datetime
+                            schedule_dt = datetime.fromisoformat(schedule_time)
+                            actual_dt = datetime.fromisoformat(actual_time)
+                            delay_minutes = (actual_dt - schedule_dt).total_seconds() / 60
+                            
+                            # 延誤超過30分鐘才警告
+                            if delay_minutes >= 30:
+                                warnings.append(f"⏰ 抵達延誤: {airline_id}{flight_number} ← {origin} 延誤 {int(delay_minutes)} 分鐘")
+                        except:
+                            pass
+                    
+                    # 檢查預計時間延誤
+                    elif estimated_time and schedule_time and not actual_time:
+                        try:
+                            from datetime import datetime
+                            schedule_dt = datetime.fromisoformat(schedule_time)
+                            estimated_dt = datetime.fromisoformat(estimated_time)
+                            delay_minutes = (estimated_dt - schedule_dt).total_seconds() / 60
+                            
+                            if delay_minutes >= 30:
+                                warnings.append(f"⏰ 抵達預計延誤: {airline_id}{flight_number} ← {origin} 預計延誤 {int(delay_minutes)} 分鐘")
+                        except:
+                            pass
+                    
+                    # 檢查特殊狀態備註
+                    if remark and any(keyword in remark for keyword in ['延誤', '異常', '等待', '暫緩']):
+                        warnings.append(f"📝 抵達狀況: {airline_id}{flight_number} ← {origin} - {remark}")
+                
+                except Exception as e:
+                    logger.error(f"分析抵達航班失敗: {e}")
+        
+        return warnings
+    
+    async def check_flight_conditions(self) -> List[str]:
+        """檢查金門機場航班狀況"""
+        logger.info("開始檢查金門機場航班狀況...")
+        
+        # 並行取得起降資料
+        departure_task = self.get_departure_info()
+        arrival_task = self.get_arrival_info()
+        
+        departure_data, arrival_data = await asyncio.gather(
+            departure_task, arrival_task, return_exceptions=True
+        )
+        
+        # 處理異常情況
+        if isinstance(departure_data, Exception):
+            logger.error(f"取得起飛資料失敗: {departure_data}")
+            departure_data = {}
+        
+        if isinstance(arrival_data, Exception):
+            logger.error(f"取得抵達資料失敗: {arrival_data}")
+            arrival_data = {}
+        
+        # 分析航班狀態
+        flight_warnings = self.analyze_flight_status(departure_data, arrival_data)
+        
+        return flight_warnings
 
 class TyphoonMonitor:
     def __init__(self):
@@ -285,23 +521,30 @@ class TyphoonMonitor:
         alerts_task = self.get_weather_alerts()
         typhoons_task = self.get_typhoon_paths()
         weather_task = self.get_weather_forecast()
+        departure_task = airport_monitor.get_departure_info()
+        arrival_task = airport_monitor.get_arrival_info()
         
-        alerts_data, typhoons_data, weather_data = await asyncio.gather(
-            alerts_task, typhoons_task, weather_task, return_exceptions=True
+        alerts_data, typhoons_data, weather_data, departure_data, arrival_data = await asyncio.gather(
+            alerts_task, typhoons_task, weather_task, departure_task, arrival_task, return_exceptions=True
         )
         
         # 更新全域狀態
-        global latest_alerts, latest_typhoons, latest_weather, last_notification_status
+        global latest_alerts, latest_typhoons, latest_weather, latest_airport_departure, latest_airport_arrival, last_notification_status
         latest_alerts = alerts_data if not isinstance(alerts_data, Exception) else {}
         latest_typhoons = typhoons_data if not isinstance(typhoons_data, Exception) else {}
         latest_weather = weather_data if not isinstance(weather_data, Exception) else {}
+        latest_airport_departure = departure_data if not isinstance(departure_data, Exception) else {}
+        latest_airport_arrival = arrival_data if not isinstance(arrival_data, Exception) else {}
+        
+        # 分析機場資料
+        flight_warnings = airport_monitor.analyze_flight_status(latest_airport_departure, latest_airport_arrival)
         
         # 分析所有資料
         alert_warnings = self.analyze_alerts(latest_alerts)
         typhoon_warnings = self.analyze_typhoons(latest_typhoons)
         weather_warnings = self.analyze_weather(latest_weather)
         
-        all_warnings = alert_warnings + typhoon_warnings + weather_warnings
+        all_warnings = alert_warnings + typhoon_warnings + weather_warnings + flight_warnings
         
         result = {
             "timestamp": datetime.now().isoformat(),
@@ -340,9 +583,16 @@ class TyphoonMonitor:
         
         typhoon_warnings = [w for w in warnings if '颱風' in w]
         wind_warnings = [w for w in warnings if '強風' in w or '暴風' in w]
+        flight_warnings = [w for w in warnings if '停飛' in w or '取消' in w]
+        delay_warnings = [w for w in warnings if '延誤' in w]
         
-        if typhoon_warnings:
+        # 實際航班已有停飛或取消，風險最高
+        if flight_warnings:
+            return "高風險 - 航班已停飛/取消"
+        elif typhoon_warnings:
             return "高風險 - 建議考慮改期"
+        elif delay_warnings:
+            return "中風險 - 航班可能延誤"
         elif wind_warnings:
             return "中風險 - 密切關注"
         else:
@@ -389,6 +639,7 @@ class TyphoonMonitor:
 
 # 建立監控器實例
 monitor = TyphoonMonitor()
+airport_monitor = AirportMonitor()
 
 async def continuous_monitoring():
     """持續監控"""
@@ -465,7 +716,7 @@ async def get_dashboard():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>颱風警訊播報系統</title>
+        <title>颱風警訊播報系統 + 金門機場監控</title>
         <meta charset="utf-8">
         <meta http-equiv="refresh" content="60">
         <style>
@@ -485,7 +736,7 @@ async def get_dashboard():
     </head>
     <body>
         <div class="container">
-            <h1>🌀 颱風警訊播報系統</h1>
+            <h1>🌀 颱風警訊播報系統 + ✈️ 金門機場監控</h1>
             <p class="update-time">最後更新: <span id="updateTime">載入中...</span></p>
             <div id="status">載入中...</div>
             <div id="travelRisk">載入中...</div>
@@ -509,14 +760,24 @@ async def get_dashboard():
                             <li>若36小時內預報有「颱風」、「暴風」、「豪雨」、「大雨」等關鍵字，則列為警報。</li>
                         </ul>
                     </li>
+                    <li><b>金門機場即時監控</b>：
+                        <ul>
+                            <li>監控金門機場（KNH）起飛和抵達航班的即時狀況。</li>
+                            <li>若航班狀態為「取消」或「停飛」，立即列為高風險警報。</li>
+                            <li>若預計時間比排定時間 <b>延誤30分鐘以上</b>，列為延誤警報。</li>
+                            <li>若備註中包含「延誤」、「取消」、「停飛」等關鍵字，列為異常警報。</li>
+                        </ul>
+                    </li>
                     <li><b>航班/體檢風險評估</b>：
                         <ul>
-                            <li>只要有颱風警報，航班列為「高風險」；有強風則為「中風險」。</li>
+                            <li>若有實際航班停飛/取消，航班列為「高風險」（優先級最高）。</li>
+                            <li>若有颱風警報，航班列為「高風險」；有強風則為「中風險」。</li>
+                            <li>若有航班延誤，列為「中風險」。</li>
                             <li>台南有颱風警報，體檢列為「高風險」；有強風或豪雨則為「中風險」。</li>
                         </ul>
                     </li>
                 </ul>
-                <p style="color:#555;font-size:14px;">（所有分析規則皆可於程式碼內 <b>analyze_alerts</b>、<b>analyze_typhoons</b>、<b>analyze_weather</b>、<b>assess_travel_risk</b>、<b>assess_checkup_risk</b> 方法查閱與調整）</p>
+                <p style="color:#555;font-size:14px;">（所有分析規則皆可於程式碼內各分析方法查閱與調整。機場資料來源：交通部TDX運輸資料流通服務）</p>
             </div>
         </div>
         <script>
@@ -569,7 +830,9 @@ async def get_raw_data():
     return {
         "alerts": latest_alerts,
         "typhoons": latest_typhoons,
-        "weather": latest_weather
+        "weather": latest_weather,
+        "airport_departure": latest_airport_departure,
+        "airport_arrival": latest_airport_arrival
     }
 
 @app.get("/api/line/friends")
@@ -600,6 +863,20 @@ async def send_test_notification():
         "friends": line_user_ids
     }
 
+@app.get("/api/airport")
+async def get_airport_status():
+    """取得金門機場即時起降資訊"""
+    departure_info = await airport_monitor.get_departure_info()
+    arrival_info = await airport_monitor.get_arrival_info()
+    flight_warnings = await airport_monitor.check_flight_conditions()
+    
+    return {
+        "departure_flights": departure_info,
+        "arrival_flights": arrival_info,
+        "warnings": flight_warnings,
+        "last_updated": datetime.now().isoformat()
+    }
+
 def main():
     """主函數"""
     print("🌀 颱風警訊播報系統啟動中...")
@@ -609,6 +886,7 @@ def main():
     print(f"- 服務端口: {SERVER_PORT}")
     print(f"- 旅行日期: {TRAVEL_DATE}")
     print(f"- 體檢日期: {CHECKUP_DATE}")
+    print("- 機場監控: 金門機場 (KNH) 起降資訊")
     
     if not API_KEY:
         print("⚠️ 警告: 中央氣象署API KEY尚未設定")

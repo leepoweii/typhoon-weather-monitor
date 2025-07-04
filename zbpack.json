@@ -1,7 +1,7 @@
 {
   "name": "typhoon-monitor",
   "buildCommand": "pip install -r requirements.txt",
-  "startCommand": "python app.py",
+  "startCommand": "uvicorn app:app --host 0.0.0.0 --port $PORT",
   "environment": "python",
   "python": {
     "entry": "app.py",
