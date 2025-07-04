@@ -4,6 +4,8 @@ Creates visual notification messages for LINE Bot
 """
 
 import logging
+
+import json
 from datetime import datetime
 from typing import Dict, List
 from linebot.v3.messaging import FlexContainer, FlexMessage
@@ -43,7 +45,7 @@ class FlexMessageBuilder:
                 ]
             }
         }
-        flex_container = FlexContainer.from_json(error_content)
+        flex_container = FlexContainer.from_json(json.dumps(error_content))
         return FlexMessage(alt_text=alt_text, contents=flex_container)
     # (class-level docstring removed, see __init__ for details)
 
@@ -246,7 +248,7 @@ class FlexMessageBuilder:
                 }
             }
 
-            flex_container = FlexContainer.from_json(flex_content)
+            flex_container = FlexContainer.from_json(json.dumps(flex_content))
             return FlexMessage(alt_text="颱風警訊通知", contents=flex_container)
 
         except KeyError as e:
@@ -293,7 +295,7 @@ class FlexMessageBuilder:
                 ]
             }
         }
-        flex_container = FlexContainer.from_json(flex_content)
+        flex_container = FlexContainer.from_json(json.dumps(flex_content))
         return FlexMessage(alt_text="機場功能已禁用", contents=flex_container)
 
     def create_test_notification_flex(self, message: str = "這是測試訊息") -> 'FlexMessage':
@@ -373,7 +375,7 @@ class FlexMessageBuilder:
                 "margin": "sm"
             }
         }
-        flex_container = FlexContainer.from_json(flex_content)
+        flex_container = FlexContainer.from_json(json.dumps(flex_content))
         return FlexMessage(alt_text="系統測試", contents=flex_container)
 
     def create_carousel_flex(self, bubbles: List[Dict]) -> 'FlexMessage':
@@ -390,7 +392,7 @@ class FlexMessageBuilder:
             "type": "carousel",
             "contents": bubbles
         }
-        flex_container = FlexContainer.from_json(flex_content)
+        flex_container = FlexContainer.from_json(json.dumps(flex_content))
         return FlexMessage(alt_text="多項資訊", contents=flex_container)
 
     def _get_typhoon_details_flex_content(self) -> List[Dict]:
