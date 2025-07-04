@@ -118,6 +118,8 @@ typhoon-weather-monitor/
 - FlexMessageBuilder returns FlexMessage objects directly, not dictionaries
 - Avoid serializing objects to JSON unnecessarily
 - Reply tokens expire quickly; handle "Invalid reply token" errors gracefully
+- URI validation required: LINE Bot rejects localhost URLs and requires proper schemes (http/https)
+- Use `validate_uri()` function for all button action URIs in FlexMessages
 
 ### Risk Assessment
 - Tainan risk assessment includes geographic analysis

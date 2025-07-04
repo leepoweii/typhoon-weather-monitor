@@ -29,3 +29,29 @@
 ✅ FlexMessage construction errors resolved
 ✅ Error handling improved
 ✅ Documentation updated
+
+## 2025-07-04 - Fixed LINE Bot URI Validation Errors
+
+### Issues Fixed:
+1. **Invalid URI Scheme**: Fixed "invalid uri scheme" errors in FlexMessage footer buttons
+2. **Localhost URI Rejection**: LINE Bot rejects localhost URLs, added validation to use placeholder URLs
+3. **Missing URI Scheme**: Added automatic https:// scheme for URIs missing protocols
+
+### Files Modified:
+- `/notifications/flex_message_builder.py` - Added URI validation function and fixed button URIs
+
+### Technical Details:
+- **Added**: `validate_uri()` function to handle URI validation for LINE Bot compatibility
+- **Fixed**: Footer button URIs in `create_typhoon_status_flex()` and `create_test_notification_flex()`
+- **Replaced**: `self.base_url` with `validate_uri(self.base_url)` in all button actions
+- **Fallback**: Uses `https://example.com` for localhost or invalid URIs
+
+### Error Resolution:
+- Fixed "(400) Bad Request" errors caused by invalid URI schemes
+- Resolved "invalid uri" and "invalid uri scheme" validation errors
+- Ensured LINE Bot compatibility with proper URI formatting
+
+### Status:
+✅ URI validation function implemented and tested
+✅ All FlexMessage URI errors resolved
+✅ LINE Bot compatibility improved

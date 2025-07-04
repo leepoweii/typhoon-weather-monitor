@@ -17,6 +17,26 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 
+def validate_uri(uri: str) -> str:
+    """
+    Validate and fix URI for LINE Bot usage
+    LINE Bot requires proper URI schemes (http/https) and rejects localhost
+    """
+    if not uri:
+        return "https://example.com"
+    
+    # Check if URI already has a scheme
+    if not uri.startswith(('http://', 'https://')):
+        # Add https scheme if missing
+        uri = f"https://{uri}"
+    
+    # LINE Bot doesn't accept localhost URLs, use a placeholder
+    if 'localhost' in uri or '127.0.0.1' in uri:
+        return "https://example.com"
+    
+    return uri
+
+
 class FlexMessageBuilder:
 
     def _error_flex_message(self, alt_text: str, main_text: str, sub_text: str) -> FlexMessage:
@@ -259,7 +279,7 @@ class FlexMessageBuilder:
                             "action": {
                                 "type": "uri",
                                 "label": "詳細資料",
-                                "uri": self.base_url
+                                "uri": validate_uri(self.base_url)
                             }
                         }
                     ],
@@ -395,7 +415,7 @@ class FlexMessageBuilder:
                         "action": {
                             "type": "uri",
                             "label": "返回監控儀表板",
-                            "uri": self.base_url
+                            "uri": validate_uri(self.base_url)
                         },
                         "style": "secondary"
                     }
