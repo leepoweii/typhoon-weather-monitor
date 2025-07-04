@@ -17,11 +17,17 @@
 <!-- 原始氣象資料區塊 -->
 <div class="raw-data-section">
     <h2>📊 原始氣象資料</h2>
+    <div class="data-controls">
+        <button onclick="refreshRawData()" class="refresh-btn">🔄 刷新資料</button>
+        <button onclick="expandAll()" class="expand-btn">📖 展開全部</button>
+        <button onclick="collapseAll()" class="collapse-btn">📘 收起全部</button>
+    </div>
     
     <!-- 颱風資料 -->
-    <div class="raw-data-block">
+    <div class="raw-data-block typhoon-block">
         <button class="collapsible" onclick="toggleContent('typhoon-content')">
             <span>🌀</span> 颱風詳細資料
+            <span class="data-status" id="typhoon-status">載入中...</span>
             <span class="toggle-icon" id="typhoon-toggle">▶</span>
         </button>
         <div class="content" id="typhoon-content">
@@ -30,9 +36,10 @@
     </div>
 
     <!-- 天氣預報資料 -->
-    <div class="raw-data-block">
+    <div class="raw-data-block weather-block">
         <button class="collapsible" onclick="toggleContent('weather-content')">
             <span>🌤️</span> 天氣預報資料
+            <span class="data-status" id="weather-status">載入中...</span>
             <span class="toggle-icon" id="weather-toggle">▶</span>
         </button>
         <div class="content" id="weather-content">
@@ -41,13 +48,26 @@
     </div>
 
     <!-- 特報資料 -->
-    <div class="raw-data-block">
+    <div class="raw-data-block alert-block">
         <button class="collapsible" onclick="toggleContent('alert-content')">
             <span>⚠️</span> 天氣特報資料
+            <span class="data-status" id="alert-status">載入中...</span>
             <span class="toggle-icon" id="alert-toggle">▶</span>
         </button>
         <div class="content" id="alert-content">
             <div id="alertData" class="alert-data">載入中...</div>
+        </div>
+    </div>
+
+    <!-- API 回應時間統計 -->
+    <div class="raw-data-block api-stats-block">
+        <button class="collapsible" onclick="toggleContent('api-stats-content')">
+            <span>📊</span> API 資料統計
+            <span class="data-status" id="api-stats-status">載入中...</span>
+            <span class="toggle-icon" id="api-stats-toggle">▶</span>
+        </button>
+        <div class="content" id="api-stats-content">
+            <div id="apiStatsData" class="api-stats-data">載入中...</div>
         </div>
     </div>
 
@@ -108,20 +128,62 @@
         }
     }
 
+    function expandAll() {
+        ['typhoon-content', 'weather-content', 'alert-content', 'api-stats-content'].forEach(contentId => {
+            const content = document.getElementById(contentId);
+            const toggleIcon = document.getElementById(contentId.replace('-content', '-toggle'));
+            content.classList.add('show');
+            toggleIcon.classList.add('rotated');
+        });
+    }
+
+    function collapseAll() {
+        ['typhoon-content', 'weather-content', 'alert-content', 'api-stats-content'].forEach(contentId => {
+            const content = document.getElementById(contentId);
+            const toggleIcon = document.getElementById(contentId.replace('-content', '-toggle'));
+            content.classList.remove('show');
+            toggleIcon.classList.remove('rotated');
+        });
+    }
+
+    async function refreshRawData() {
+        const refreshBtn = document.querySelector('.refresh-btn');
+        refreshBtn.textContent = '⏳ 更新中...';
+        refreshBtn.disabled = true;
+        
+        try {
+            await updateRawData();
+            refreshBtn.textContent = '✅ 已更新';
+            setTimeout(() => {
+                refreshBtn.textContent = '🔄 刷新資料';
+                refreshBtn.disabled = false;
+            }, 2000);
+        } catch (error) {
+            refreshBtn.textContent = '❌ 更新失敗';
+            setTimeout(() => {
+                refreshBtn.textContent = '🔄 刷新資料';
+                refreshBtn.disabled = false;
+            }, 2000);
+        }
+    }
+
     function formatRawData(data, type) {
         if (!data || Object.keys(data).length === 0) {
-            return '<div class="no-data">目前無資料</div>';
+            return '<div class="no-data">📭 目前無資料</div>';
         }
 
+        const timestamp = new Date().toLocaleString('zh-TW');
+        let html = `<div class="data-timestamp">📅 資料時間: ${timestamp}</div>`;
+
         if (type === 'typhoon') {
-            return formatTyphoonData(data);
+            html += formatTyphoonData(data);
         } else if (type === 'weather') {
-            return formatWeatherData(data);
+            html += formatWeatherData(data);
         } else if (type === 'alert') {
-            return formatAlertData(data);
+            html += formatAlertData(data);
         }
         
-        return '<div class="no-data">無法解析資料</div>';
+        return html || '<div class="no-data">❓ 無法解析資料</div>';
     }
 
     function formatTyphoonData(data) {
@@ -132,35 +194,69 @@
             if (records.tropicalCyclones && records.tropicalCyclones.tropicalCyclone) {
                 const typhoons = records.tropicalCyclones.tropicalCyclone;
                 
+                html += `<div class="data-summary">🌀 發現 ${typhoons.length} 個熱帶氣旋</div>`;
+                
                 typhoons.forEach((typhoon, index) => {
                     const name = typhoon.cwaTyphoonName || typhoon.typhoonName || '未知熱帶氣旋';
                     const tyNo = typhoon.cwaTyNo || typhoon.cwaTdNo || '';
                     
+                    // 颱風強度評級
+                    let intensityClass = 'typhoon-weak';
+                    let intensityText = '輕度';
+                    const analysisData = typhoon.analysisData || {};
+                    const fixes = analysisData.fix || [];
+                    
+                    if (fixes.length > 0) {
+                        const latestFix = fixes[fixes.length - 1];
+                        const windSpeed = parseInt(latestFix.maxWindSpeed || 0) * 3.6; // 轉換為 km/h
+                        
+                        if (windSpeed >= 118) {
+                            intensityClass = 'typhoon-super';
+                            intensityText = '強烈颱風';
+                        } else if (windSpeed >= 88) {
+                            intensityClass = 'typhoon-strong';
+                            intensityText = '中度颱風';
+                        } else if (windSpeed >= 62) {
+                            intensityClass = 'typhoon-moderate';
+                            intensityText = '輕度颱風';
+                        } else if (windSpeed >= 34) {
+                            intensityClass = 'typhoon-weak';
+                            intensityText = '熱帶風暴';
+                        } else {
+                            intensityClass = 'typhoon-depression';
+                            intensityText = '熱帶性低氣壓';
+                        }
+                    }
+                    
+                    html += `<div class="typhoon-card ${intensityClass}">`;
+                    html += `<div class="typhoon-header">`;
+                    html += `<h3 class="typhoon-name">� ${name}</h3>`;
+                    html += `<span class="typhoon-intensity">${intensityText}</span>`;
+                    html += `</div>`;
+                    
                     html += `<div class="data-grid">`;
-                    html += `<div class="data-item"><div class="data-item-label">🌀 颱風名稱</div><div class="data-item-value">${name}</div></div>`;
                     
                     if (tyNo) {
                         html += `<div class="data-item"><div class="data-item-label">🏷️ 編號</div><div class="data-item-value">${tyNo}</div></div>`;
                     }
-                    
-                    const analysisData = typhoon.analysisData || {};
-                    const fixes = analysisData.fix || [];
                     
                     if (fixes.length > 0) {
                         const latestFix = fixes[fixes.length - 1];
                         
                         if (latestFix.maxWindSpeed) {
                             const windKmh = (parseInt(latestFix.maxWindSpeed) * 3.6).toFixed(1);
-                            html += `<div class="data-item"><div class="data-item-label">💨 最大風速</div><div class="data-item-value">${latestFix.maxWindSpeed} m/s (${windKmh} km/h)</div></div>`;
+                            const windIcon = getWindIcon(windKmh);
+                            html += `<div class="data-item wind-speed"><div class="data-item-label">${windIcon} 最大風速</div><div class="data-item-value">${latestFix.maxWindSpeed} m/s<br><small>(${windKmh} km/h)</small></div></div>`;
                         }
                         
                         if (latestFix.maxGustSpeed) {
                             const gustKmh = (parseInt(latestFix.maxGustSpeed) * 3.6).toFixed(1);
-                            html += `<div class="data-item"><div class="data-item-label">💨 最大陣風</div><div class="data-item-value">${latestFix.maxGustSpeed} m/s (${gustKmh} km/h)</div></div>`;
+                            html += `<div class="data-item"><div class="data-item-label">💨 最大陣風</div><div class="data-item-value">${latestFix.maxGustSpeed} m/s<br><small>(${gustKmh} km/h)</small></div></div>`;
                         }
                         
                         if (latestFix.pressure) {
-                            html += `<div class="data-item"><div class="data-item-label">📊 中心氣壓</div><div class="data-item-value">${latestFix.pressure} hPa</div></div>`;
+                            const pressureIcon = getPressureIcon(latestFix.pressure);
+                            html += `<div class="data-item"><div class="data-item-label">${pressureIcon} 中心氣壓</div><div class="data-item-value">${latestFix.pressure} hPa</div></div>`;
                         }
                         
                         if (latestFix.movingSpeed) {
@@ -169,42 +265,44 @@
                         
                         if (latestFix.movingDirection) {
                             const directionMap = {
-                                'N': '北', 'NNE': '北北東', 'NE': '東北', 'ENE': '東北東',
-                                'E': '東', 'ESE': '東南東', 'SE': '東南', 'SSE': '南南東',
-                                'S': '南', 'SSW': '南南西', 'SW': '西南', 'WSW': '西南西',
-                                'W': '西', 'WNW': '西北西', 'NW': '西北', 'NNW': '北北西'
+                                'N': '北 ⬆️', 'NNE': '北北東 ↗️', 'NE': '東北 ↗️', 'ENE': '東北東 ↗️',
+                                'E': '東 ➡️', 'ESE': '東南東 ↘️', 'SE': '東南 ↘️', 'SSE': '南南東 ↘️',
+                                'S': '南 ⬇️', 'SSW': '南南西 ↙️', 'SW': '西南 ↙️', 'WSW': '西南西 ↙️',
+                                'W': '西 ⬅️', 'WNW': '西北西 ↖️', 'NW': '西北 ↖️', 'NNW': '北北西 ↖️'
                             };
                             const directionZh = directionMap[latestFix.movingDirection] || latestFix.movingDirection;
-                            html += `<div class="data-item"><div class="data-item-label">➡️ 移動方向</div><div class="data-item-value">${directionZh}</div></div>`;
+                            html += `<div class="data-item"><div class="data-item-label">🧭 移動方向</div><div class="data-item-value">${directionZh}</div></div>`;
                         }
                         
                         if (latestFix.coordinate) {
                             try {
                                 const [lon, lat] = latestFix.coordinate.split(',');
-                                html += `<div class="data-item"><div class="data-item-label">📍 座標位置</div><div class="data-item-value">${lat}°N, ${lon}°E</div></div>`;
+                                const distance = calculateDistanceToTaiwan(parseFloat(lat), parseFloat(lon));
+                                html += `<div class="data-item"><div class="data-item-label">📍 座標位置</div><div class="data-item-value">${lat}°N, ${lon}°E<br><small>距台灣約 ${distance} km</small></div></div>`;
                             } catch (e) {
                                 html += `<div class="data-item"><div class="data-item-label">📍 座標位置</div><div class="data-item-value">${latestFix.coordinate}</div></div>`;
                             }
                         }
                         
                         if (latestFix.circleOf15Ms && latestFix.circleOf15Ms.radius) {
-                            html += `<div class="data-item"><div class="data-item-label">🌪️ 暴風圈半徑</div><div class="data-item-value">${latestFix.circleOf15Ms.radius} km</div></div>`;
+                            html += `<div class="data-item storm-circle"><div class="data-item-label">🌪️ 暴風圈</div><div class="data-item-value">${latestFix.circleOf15Ms.radius} km 半徑</div></div>`;
                         }
                         
                         if (latestFix.fixTime) {
-                            html += `<div class="data-item"><div class="data-item-label">🕐 觀測時間</div><div class="data-item-value">${latestFix.fixTime.substring(0, 16)}</div></div>`;
+                            const timeAgo = getTimeAgo(latestFix.fixTime);
+                            html += `<div class="data-item"><div class="data-item-label">🕐 觀測時間</div><div class="data-item-value">${latestFix.fixTime.substring(0, 16)}<br><small>${timeAgo}</small></div></div>`;
                         }
                     }
                     
-                    html += `</div>`;
-                    if (index < typhoons.length - 1) html += '<hr style="margin: 20px 0;">';
+                    html += `</div></div>`;
+                    if (index < typhoons.length - 1) html += '<hr class="typhoon-separator">';
                 });
             } else {
-                html = '<div class="no-data">🌀 目前無活躍颱風</div>';
+                html += '<div class="no-data">� 目前無活躍颱風</div>';
             }
         } catch (error) {
             console.error('解析颱風資料失敗:', error);
-            html = '<div class="no-data">解析颱風資料失敗</div>';
+            html += '<div class="error-data">❌ 解析颱風資料失敗</div>';
         }
         
         return html;
@@ -217,16 +315,21 @@
             const locations = records.location || [];
             
             if (locations.length === 0) {
-                return '<div class="no-data">無天氣預報資料</div>';
+                return '<div class="no-data">📭 無天氣預報資料</div>';
             }
+            
+            html += `<div class="data-summary">🌤️ 監控 ${locations.length} 個地區的天氣預報</div>`;
             
             locations.forEach((location, index) => {
                 const locationName = location.locationName || '未知地區';
                 const elements = location.weatherElement || [];
                 
-                html += `<h4>${locationName}</h4>`;
+                html += `<div class="weather-card">`;
+                html += `<h4 class="location-title">📍 ${locationName}</h4>`;
                 html += `<div class="data-grid">`;
                 
+                // 整理資料結構，方便顯示
+                const weatherInfo = {};
                 elements.forEach(element => {
                     const elementName = element.elementName || '';
                     const times = element.time || [];
@@ -236,27 +339,47 @@
                         const value = latestTime.parameter?.parameterName || '';
                         const startTime = latestTime.startTime || '';
                         
-                        if (elementName === 'Wx' && value) {
-                            html += `<div class="data-item"><div class="data-item-label">🌤️ 天氣現象</div><div class="data-item-value">${value}</div></div>`;
-                            html += `<div class="data-item"><div class="data-item-label">🕐 預報時間</div><div class="data-item-value">${startTime.substring(0, 16)}</div></div>`;
-                        } else if (elementName === 'PoP' && value) {
-                            html += `<div class="data-item"><div class="data-item-label">🌧️ 降雨機率</div><div class="data-item-value">${value}%</div></div>`;
-                        } else if (elementName === 'MinT' && value) {
-                            html += `<div class="data-item"><div class="data-item-label">🌡️ 最低溫度</div><div class="data-item-value">${value}°C</div></div>`;
-                        } else if (elementName === 'MaxT' && value) {
-                            html += `<div class="data-item"><div class="data-item-label">🌡️ 最高溫度</div><div class="data-item-value">${value}°C</div></div>`;
-                        } else if (elementName === 'CI' && value) {
-                            html += `<div class="data-item"><div class="data-item-label">😌 舒適度</div><div class="data-item-value">${value}</div></div>`;
-                        }
+                        weatherInfo[elementName] = { value, startTime };
                     }
                 });
                 
-                html += `</div>`;
-                if (index < locations.length - 1) html += '<hr style="margin: 20px 0;">';
+                // 按優先順序顯示天氣資訊
+                if (weatherInfo.Wx && weatherInfo.Wx.value) {
+                    const weatherIcon = getWeatherIcon(weatherInfo.Wx.value);
+                    html += `<div class="data-item weather-phenomenon"><div class="data-item-label">${weatherIcon} 天氣現象</div><div class="data-item-value">${weatherInfo.Wx.value}<br><small>${weatherInfo.Wx.startTime.substring(0, 16)}</small></div></div>`;
+                }
+                
+                if (weatherInfo.PoP && weatherInfo.PoP.value) {
+                    const rainIcon = getRainIcon(weatherInfo.PoP.value);
+                    html += `<div class="data-item rain-probability"><div class="data-item-label">${rainIcon} 降雨機率</div><div class="data-item-value">${weatherInfo.PoP.value}%</div></div>`;
+                }
+                
+                // 溫度範圍
+                const minTemp = weatherInfo.MinT?.value;
+                const maxTemp = weatherInfo.MaxT?.value;
+                if (minTemp && maxTemp) {
+                    const tempIcon = getTempIcon(maxTemp);
+                    html += `<div class="data-item temperature-range"><div class="data-item-label">${tempIcon} 溫度範圍</div><div class="data-item-value">${minTemp}°C ~ ${maxTemp}°C</div></div>`;
+                } else {
+                    if (minTemp) {
+                        html += `<div class="data-item"><div class="data-item-label">🌡️ 最低溫度</div><div class="data-item-value">${minTemp}°C</div></div>`;
+                    }
+                    if (maxTemp) {
+                        html += `<div class="data-item"><div class="data-item-label">🌡️ 最高溫度</div><div class="data-item-value">${maxTemp}°C</div></div>`;
+                    }
+                }
+                
+                if (weatherInfo.CI && weatherInfo.CI.value) {
+                    const comfortIcon = getComfortIcon(weatherInfo.CI.value);
+                    html += `<div class="data-item comfort-index"><div class="data-item-label">${comfortIcon} 舒適度</div><div class="data-item-value">${weatherInfo.CI.value}</div></div>`;
+                }
+                
+                html += `</div></div>`;
+                if (index < locations.length - 1) html += '<hr class="location-separator">';
             });
         } catch (error) {
             console.error('解析天氣資料失敗:', error);
-            html = '<div class="no-data">解析天氣資料失敗</div>';
+            html += '<div class="error-data">❌ 解析天氣資料失敗</div>';
         }
         
         return html;
@@ -269,16 +392,21 @@
             const locations = records.location || [];
             
             if (locations.length === 0) {
-                return '<div class="no-data">無特報資料</div>';
+                return '<div class="no-data">📭 無特報資料</div>';
             }
+            
+            let alertCount = 0;
+            let tempHtml = '';
             
             locations.forEach((location, index) => {
                 const locationName = location.locationName || '未知地區';
                 const hazards = location.hazardConditions?.hazards || [];
                 
                 if (hazards.length > 0) {
-                    html += `<h4>${locationName}</h4>`;
-                    html += `<div class="data-grid">`;
+                    alertCount += hazards.length;
+                    tempHtml += `<div class="alert-card">`;
+                    tempHtml += `<h4 class="location-title alert-location">⚠️ ${locationName}</h4>`;
+                    tempHtml += `<div class="data-grid">`;
                     
                     hazards.forEach(hazard => {
                         const phenomena = hazard.phenomena || '';
@@ -286,25 +414,37 @@
                         const effectiveTime = hazard.effectiveTime || '';
                         
                         if (phenomena) {
-                            html += `<div class="data-item"><div class="data-item-label">📢 特報類型</div><div class="data-item-value">${phenomena} ${significance}</div></div>`;
+                            const alertIcon = getAlertIcon(phenomena);
+                            const alertClass = getAlertClass(phenomena, significance);
+                            
+                            tempHtml += `<div class="data-item alert-item ${alertClass}">`;
+                            tempHtml += `<div class="data-item-label">${alertIcon} 特報類型</div>`;
+                            tempHtml += `<div class="data-item-value">${phenomena} ${significance}`;
+                            
                             if (effectiveTime) {
-                                html += `<div class="data-item"><div class="data-item-label">🕐 生效時間</div><div class="data-item-value">${effectiveTime.substring(0, 16)}</div></div>`;
+                                const timeAgo = getTimeAgo(effectiveTime);
+                                tempHtml += `<br><small>生效: ${effectiveTime.substring(0, 16)}<br>${timeAgo}</small>`;
                             }
+                            
+                            tempHtml += `</div></div>`;
                         }
                     });
                     
-                    html += `</div>`;
+                    tempHtml += `</div></div>`;
+                    if (index < locations.length - 1) tempHtml += '<hr class="alert-separator">';
                 }
-                
-                if (index < locations.length - 1) html += '<hr style="margin: 20px 0;">';
             });
             
-            if (html === '') {
-                html = '<div class="no-data">目前無特報資料</div>';
+            if (alertCount > 0) {
+                html += `<div class="data-summary alert-summary">⚠️ 發現 ${alertCount} 項特報警訊</div>`;
+                html += tempHtml;
+            } else {
+                html += '<div class="no-data">✅ 目前無特報資料</div>';
             }
+            
         } catch (error) {
             console.error('解析特報資料失敗:', error);
-            html = '<div class="no-data">解析特報資料失敗</div>';
+            html += '<div class="error-data">❌ 解析特報資料失敗</div>';
         }
         
         return html;
@@ -331,16 +471,190 @@
                 warningsDiv.innerHTML = '<h3>✅ 目前無特殊警報</h3>';
             }
 
-            // 更新原始資料
+            await updateRawData();
+            
+        } catch (error) {
+            console.error('更新資料失敗:', error);
+        }
+    }
+
+    async function updateRawData() {
+        try {
+            const startTime = Date.now();
             const rawDataResponse = await fetch('/api/raw-data');
+            const loadTime = Date.now() - startTime;
             const rawData = await rawDataResponse.json();
             
+            // 更新狀態顯示
+            updateDataStatus('typhoon', rawData.typhoons);
+            updateDataStatus('weather', rawData.weather);
+            updateDataStatus('alert', rawData.alerts);
+            
+            // 更新資料內容
             document.getElementById('typhoonData').innerHTML = formatRawData(rawData.typhoons, 'typhoon');
             document.getElementById('weatherData').innerHTML = formatRawData(rawData.weather, 'weather');
             document.getElementById('alertData').innerHTML = formatRawData(rawData.alerts, 'alert');
             
+            // 更新 API 統計
+            document.getElementById('apiStatsData').innerHTML = formatApiStats(rawData, loadTime);
+            
         } catch (error) {
-            console.error('更新資料失敗:', error);
+            console.error('更新原始資料失敗:', error);
+            document.getElementById('typhoonData').innerHTML = '<div class="error-data">❌ 資料載入失敗</div>';
+            document.getElementById('weatherData').innerHTML = '<div class="error-data">❌ 資料載入失敗</div>';
+            document.getElementById('alertData').innerHTML = '<div class="error-data">❌ 資料載入失敗</div>';
+        }
+    }
+
+    function updateDataStatus(type, data) {
+        const statusElement = document.getElementById(`${type}-status`);
+        if (!data || Object.keys(data).length === 0) {
+            statusElement.innerHTML = '<span class="status-no-data">無資料</span>';
+            return;
+        }
+
+        let count = 0;
+        if (type === 'typhoon') {
+            const typhoons = data.records?.tropicalCyclones?.tropicalCyclone || [];
+            count = typhoons.length;
+            statusElement.innerHTML = count > 0 ? 
+                `<span class="status-active">${count} 個颱風</span>` : 
+                '<span class="status-safe">無颱風</span>';
+        } else if (type === 'weather') {
+            const locations = data.records?.location || [];
+            count = locations.length;
+            statusElement.innerHTML = count > 0 ? 
+                `<span class="status-normal">${count} 地區</span>` : 
+                '<span class="status-no-data">無資料</span>';
+        } else if (type === 'alert') {
+            const locations = data.records?.location || [];
+            count = locations.reduce((total, loc) => total + (loc.hazardConditions?.hazards?.length || 0), 0);
+            statusElement.innerHTML = count > 0 ? 
+                `<span class="status-warning">${count} 項警報</span>` : 
+                '<span class="status-safe">無警報</span>';
+        }
+    }
+
+    function formatApiStats(rawData, loadTime) {
+        let html = '<div class="data-grid">';
+        
+        // API 回應時間
+        html += `<div class="data-item"><div class="data-item-label">⚡ API 回應時間</div><div class="data-item-value">${loadTime} ms</div></div>`;
+        
+        // 資料大小統計
+        const dataSize = JSON.stringify(rawData).length;
+        const dataSizeKB = (dataSize / 1024).toFixed(2);
+        html += `<div class="data-item"><div class="data-item-label">📊 資料大小</div><div class="data-item-value">${dataSizeKB} KB</div></div>`;
+        
+        // 颱風統計
+        const typhoonCount = rawData.typhoons?.records?.tropicalCyclones?.tropicalCyclone?.length || 0;
+        html += `<div class="data-item"><div class="data-item-label">🌀 活躍颱風</div><div class="data-item-value">${typhoonCount} 個</div></div>`;
+        
+        // 監控地區統計
+        const weatherLocations = rawData.weather?.records?.location?.length || 0;
+        html += `<div class="data-item"><div class="data-item-label">📍 監控地區</div><div class="data-item-value">${weatherLocations} 個</div></div>`;
+        
+        // 特報統計
+        const alertLocations = rawData.alerts?.records?.location || [];
+        const totalAlerts = alertLocations.reduce((total, loc) => total + (loc.hazardConditions?.hazards?.length || 0), 0);
+        html += `<div class="data-item"><div class="data-item-label">⚠️ 特報數量</div><div class="data-item-value">${totalAlerts} 項</div></div>`;
+        
+        // 最後更新時間
+        const updateTime = new Date().toLocaleString('zh-TW');
+        html += `<div class="data-item"><div class="data-item-label">🕐 更新時間</div><div class="data-item-value">${updateTime}</div></div>`;
+        
+        html += '</div>';
+        return html;
+    }
+
+    // Helper functions for icons and calculations
+    function getWindIcon(windSpeed) {
+        if (windSpeed >= 118) return '🌪️';
+        if (windSpeed >= 88) return '💨';
+        if (windSpeed >= 62) return '🌬️';
+        if (windSpeed >= 34) return '🍃';
+        return '🌬️';
+    }
+
+    function getPressureIcon(pressure) {
+        if (pressure < 950) return '🔴';
+        if (pressure < 980) return '🟠';
+        return '📊';
+    }
+
+    function getWeatherIcon(weather) {
+        if (weather.includes('晴')) return '☀️';
+        if (weather.includes('雲')) return '☁️';
+        if (weather.includes('陰')) return '☁️';
+        if (weather.includes('雨')) return '🌧️';
+        if (weather.includes('雷')) return '⛈️';
+        if (weather.includes('霧')) return '🌫️';
+        return '🌤️';
+    }
+
+    function getRainIcon(probability) {
+        if (probability >= 80) return '🌧️';
+        if (probability >= 60) return '🌦️';
+        if (probability >= 30) return '⛅';
+        return '☀️';
+    }
+
+    function getTempIcon(temp) {
+        if (temp >= 35) return '🥵';
+        if (temp >= 25) return '🌡️';
+        if (temp >= 15) return '🌡️';
+        return '🥶';
+    }
+
+    function getComfortIcon(comfort) {
+        if (comfort.includes('舒適')) return '😊';
+        if (comfort.includes('悶熱')) return '😰';
+        if (comfort.includes('寒冷')) return '🥶';
+        return '😌';
+    }
+
+    function getAlertIcon(phenomena) {
+        if (phenomena.includes('颱風')) return '🌪️';
+        if (phenomena.includes('強風')) return '💨';
+        if (phenomena.includes('豪雨')) return '🌧️';
+        if (phenomena.includes('雷電')) return '⛈️';
+        return '⚠️';
+    }
+
+    function getAlertClass(phenomena, significance) {
+        if (phenomena.includes('颱風') || significance.includes('警報')) return 'alert-danger';
+        if (phenomena.includes('豪雨') || significance.includes('特報')) return 'alert-warning';
+        return 'alert-info';
+    }
+
+    function calculateDistanceToTaiwan(lat, lon) {
+        // 台灣中心點座標 (大約)
+        const taiwanLat = 23.8;
+        const taiwanLon = 121.0;
+        
+        const R = 6371; // 地球半徑 km
+        const dLat = (lat - taiwanLat) * Math.PI / 180;
+        const dLon = (lon - taiwanLon) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(taiwanLat * Math.PI / 180) * Math.cos(lat * Math.PI / 180) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const distance = R * c;
+        
+        return Math.round(distance);
+    }
+
+    function getTimeAgo(timeString) {
+        const now = new Date();
+        const time = new Date(timeString);
+        const diffMs = now - time;
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        
+        if (diffHours > 0) {
+            return `${diffHours} 小時 ${diffMins} 分鐘前`;
+        } else {
+            return `${diffMins} 分鐘前`;
         }
     }
     function getRiskClass(risk) {

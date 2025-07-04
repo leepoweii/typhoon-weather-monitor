@@ -296,8 +296,9 @@ class LineNotifier:
             return
         
         try:
-            flex_container = self.flex_builder.create_typhoon_status_flex(result)
-            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container)
+            flex_container_dict = self.flex_builder.create_typhoon_status_flex(result)
+            # 使用字典格式創建 FlexMessage
+            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container_dict)
             
             for user_id in self.line_user_ids:
                 push_message = PushMessageRequest(
@@ -341,8 +342,9 @@ class LineNotifier:
     async def reply_typhoon_status_flex(self, reply_token: str, result: Dict):
         """回覆颱風狀態 Flex Message"""
         try:
-            flex_container = self.flex_builder.create_typhoon_status_flex(result)
-            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container)
+            flex_container_dict = self.flex_builder.create_typhoon_status_flex(result)
+            # 使用字典格式創建 FlexMessage
+            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container_dict)
             
             reply_message = ReplyMessageRequest(
                 reply_token=reply_token,
@@ -375,8 +377,9 @@ class LineNotifier:
             return
         
         try:
-            flex_container = self.flex_builder.create_test_notification_flex("🧪 LINE Bot Flex Message 測試成功！")
-            flex_message = FlexMessage(alt_text="系統測試通知", contents=flex_container)
+            flex_container_dict = self.flex_builder.create_test_notification_flex("🧪 LINE Bot Flex Message 測試成功！")
+            # 使用字典格式創建 FlexMessage
+            flex_message = FlexMessage(alt_text="系統測試通知", contents=flex_container_dict)
             
             for user_id in self.line_user_ids:
                 push_message = PushMessageRequest(

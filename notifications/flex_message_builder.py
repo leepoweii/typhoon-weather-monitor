@@ -6,7 +6,10 @@ Creates visual notification messages for LINE Bot
 import logging
 from datetime import datetime
 from typing import Dict, List
-from linebot.v3.messaging import FlexContainer
+from linebot.v3.messaging import FlexContainer, FlexBubble, FlexBox, FlexText, FlexSeparator, FlexButton
+from linebot.v3.messaging.models import (
+    URIAction, FlexComponent
+)
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -23,7 +26,7 @@ class FlexMessageBuilder:
         """
         self.base_url = base_url or settings.get_base_url()
     
-    def create_typhoon_status_flex(self, result: Dict) -> FlexContainer:
+    def create_typhoon_status_flex(self, result: Dict) -> Dict:
         """
         創建颱風狀態的 Flex Message
         
@@ -235,9 +238,10 @@ class FlexMessageBuilder:
             }
         }
         
-        return FlexContainer.from_dict(flex_content)
+        # 返回字典格式，讓 LINE Bot SDK 處理
+        return flex_content
     
-    def create_airport_status_flex(self, airport_data: Dict) -> FlexContainer:
+    def create_airport_status_flex(self, airport_data: Dict) -> Dict:
         """
         創建機場狀態的 Flex Message (已禁用)
         
@@ -274,9 +278,10 @@ class FlexMessageBuilder:
             }
         }
         
-        return FlexContainer.from_dict(flex_content)
+        # 返回字典格式，讓 LINE Bot SDK 處理
+        return flex_content
     
-    def create_test_notification_flex(self, message: str = "這是測試訊息") -> FlexContainer:
+    def create_test_notification_flex(self, message: str = "這是測試訊息") -> Dict:
         """
         創建測試通知的 Flex Message
         
@@ -354,9 +359,10 @@ class FlexMessageBuilder:
             }
         }
         
-        return FlexContainer.from_dict(flex_content)
+        # 返回字典格式，讓 LINE Bot SDK 處理
+        return flex_content
     
-    def create_carousel_flex(self, bubbles: List[Dict]) -> FlexContainer:
+    def create_carousel_flex(self, bubbles: List[Dict]) -> Dict:
         """
         創建輪播式 Flex Message
         
@@ -371,7 +377,8 @@ class FlexMessageBuilder:
             "contents": bubbles
         }
         
-        return FlexContainer.from_dict(flex_content)
+        # 返回字典格式，讓 LINE Bot SDK 處理
+        return flex_content
 
     def _get_typhoon_details_flex_content(self) -> List[Dict]:
         """獲取颱風詳細資料的 Flex Message 內容"""

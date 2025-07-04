@@ -5,40 +5,192 @@
     <meta charset="utf-8">
     <meta http-equiv="refresh" content="60">
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
-        .status-safe { color: green; font-size: 24px; font-weight: bold; }
-        .status-danger { color: red; font-size: 24px; font-weight: bold; }
+        body { font-family: Arial, sans-serif; margin: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .status-safe { color: #28a745; font-size: 24px; font-weight: bold; }
+        .status-danger { color: #dc3545; font-size: 24px; font-weight: bold; }
         .warning-item { background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 5px 0; border-radius: 5px; }
-        .risk-high { color: red; font-weight: bold; }
-        .risk-medium { color: orange; font-weight: bold; }
-        .risk-low { color: green; font-weight: bold; }
+        .risk-high { color: #dc3545; font-weight: bold; }
+        .risk-medium { color: #fd7e14; font-weight: bold; }
+        .risk-low { color: #28a745; font-weight: bold; }
         .update-time { color: #666; font-size: 14px; }
         .explain-block { background: #e3f2fd; border-left: 5px solid #1976d2; padding: 16px; margin: 24px 0; border-radius: 8px; }
         .explain-block h2 { margin-top: 0; color: #1976d2; }
         .explain-block ul { margin: 0 0 0 1.5em; }
+        
+        /* Enhanced Raw Data Section */
         .raw-data-section { margin: 24px 0; }
-        .raw-data-block { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; margin: 16px 0; }
-        .raw-data-title { font-size: 18px; font-weight: bold; color: #495057; margin-bottom: 12px; display: flex; align-items: center; }
-        .raw-data-title span { margin-right: 8px; }
-        .data-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin: 12px 0; }
-        .data-item { background: white; border: 1px solid #e9ecef; border-radius: 6px; padding: 12px; }
-        .data-item-label { font-weight: bold; color: #6c757d; font-size: 14px; margin-bottom: 4px; }
-        .data-item-value { color: #212529; font-size: 16px; word-wrap: break-word; }
+        .data-controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .data-controls button { 
+            padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; 
+            transition: all 0.3s ease; font-weight: 500; 
+        }
+        .refresh-btn { background: #007bff; color: white; }
+        .refresh-btn:hover { background: #0056b3; }
+        .refresh-btn:disabled { background: #6c757d; cursor: not-allowed; }
+        .expand-btn { background: #28a745; color: white; }
+        .expand-btn:hover { background: #1e7e34; }
+        .collapse-btn { background: #6c757d; color: white; }
+        .collapse-btn:hover { background: #545b62; }
+        
+        /* Enhanced Raw Data Blocks */
+        .raw-data-block { 
+            background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 12px; 
+            padding: 0; margin: 16px 0; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .typhoon-block { border-left: 5px solid #dc3545; }
+        .weather-block { border-left: 5px solid #28a745; }
+        .alert-block { border-left: 5px solid #ffc107; }
+        .api-stats-block { border-left: 5px solid #6f42c1; }
+        
+        .collapsible { 
+            cursor: pointer; background: none; border: none; width: 100%; text-align: left; 
+            font-size: 18px; font-weight: bold; color: #495057; padding: 16px; 
+            display: flex; align-items: center; justify-content: space-between; 
+            transition: background-color 0.3s ease; 
+        }
+        .collapsible:hover { background-color: #e9ecef; }
+        .collapsible.active { background-color: #dee2e6; }
+        
+        .data-status { 
+            font-size: 14px; font-weight: normal; padding: 4px 8px; 
+            border-radius: 12px; margin-left: auto; margin-right: 10px; 
+        }
+        .status-active { background: #dc3545; color: white; }
+        .status-warning { background: #ffc107; color: #212529; }
+        .status-safe { background: #28a745; color: white; }
+        .status-normal { background: #17a2b8; color: white; }
+        .status-no-data { background: #6c757d; color: white; }
+        
+        .content { display: none; overflow: hidden; padding: 0 16px 16px 16px; }
+        .content.show { display: block; }
+        .toggle-icon { 
+            font-size: 16px; transition: transform 0.3s ease; 
+            width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; 
+        }
+        .toggle-icon.rotated { transform: rotate(90deg); }
+        
+        /* Enhanced Data Display */
+        .data-timestamp { 
+            background: #e9ecef; padding: 8px 12px; border-radius: 6px; 
+            font-size: 14px; color: #495057; margin-bottom: 16px; 
+        }
+        .data-summary { 
+            background: #d1ecf1; border: 1px solid #bee5eb; border-radius: 6px; 
+            padding: 12px; margin-bottom: 16px; color: #0c5460; font-weight: 500; 
+        }
+        .alert-summary { background: #fff3cd; border-color: #ffeaa7; color: #856404; }
+        
+        .data-grid { 
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
+            gap: 16px; margin: 12px 0; 
+        }
+        .data-item { 
+            background: white; border: 1px solid #e9ecef; border-radius: 8px; 
+            padding: 14px; transition: all 0.3s ease; position: relative; 
+        }
+        .data-item:hover { 
+            transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+        }
+        .data-item-label { 
+            font-weight: 600; color: #6c757d; font-size: 14px; 
+            margin-bottom: 6px; display: flex; align-items: center; 
+        }
+        .data-item-value { 
+            color: #212529; font-size: 16px; word-wrap: break-word; 
+            line-height: 1.4; 
+        }
+        
+        /* Typhoon specific styling */
+        .typhoon-card { 
+            border: 2px solid #e9ecef; border-radius: 12px; 
+            padding: 20px; margin: 16px 0; background: white; 
+        }
+        .typhoon-super { border-color: #721c24; background: linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%); }
+        .typhoon-strong { border-color: #b91c1c; background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%); }
+        .typhoon-moderate { border-color: #d97706; background: linear-gradient(135deg, #fffbeb 0%, #fed7aa 100%); }
+        .typhoon-weak { border-color: #059669; background: linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%); }
+        .typhoon-depression { border-color: #0891b2; background: linear-gradient(135deg, #f0f9ff 0%, #bae6fd 100%); }
+        
+        .typhoon-header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 16px; 
+        }
+        .typhoon-name { margin: 0; color: #1a202c; }
+        .typhoon-intensity { 
+            padding: 6px 12px; border-radius: 20px; font-size: 14px; 
+            font-weight: 600; color: white; 
+        }
+        .typhoon-super .typhoon-intensity { background: #721c24; }
+        .typhoon-strong .typhoon-intensity { background: #b91c1c; }
+        .typhoon-moderate .typhoon-intensity { background: #d97706; }
+        .typhoon-weak .typhoon-intensity { background: #059669; }
+        .typhoon-depression .typhoon-intensity { background: #0891b2; }
+        
+        .wind-speed { border-left: 4px solid #dc3545; }
+        .storm-circle { border-left: 4px solid #6f42c1; }
+        .temperature-range { border-left: 4px solid #fd7e14; }
+        .rain-probability { border-left: 4px solid #17a2b8; }
+        .weather-phenomenon { border-left: 4px solid #28a745; }
+        .comfort-index { border-left: 4px solid #6c757d; }
+        
+        /* Weather and Alert Cards */
+        .weather-card, .alert-card { 
+            background: white; border-radius: 10px; padding: 20px; 
+            margin: 16px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
+        }
+        .location-title { 
+            margin: 0 0 16px 0; color: #2d3748; 
+            border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; 
+        }
+        .alert-location { color: #c53030; }
+        
+        .alert-item { border-left: 4px solid #ffc107; }
+        .alert-danger { border-left-color: #dc3545; }
+        .alert-warning { border-left-color: #ffc107; }
+        .alert-info { border-left-color: #17a2b8; }
+        
+        /* Separators */
+        .typhoon-separator, .location-separator, .alert-separator { 
+            border: none; height: 2px; background: linear-gradient(90deg, #e2e8f0, #cbd5e0, #e2e8f0); 
+            margin: 24px 0; border-radius: 1px; 
+        }
+        
+        /* Data states */
+        .no-data { 
+            color: #718096; font-style: italic; text-align: center; 
+            padding: 40px 20px; background: #f7fafc; border-radius: 8px; 
+            border: 2px dashed #e2e8f0; 
+        }
+        .error-data { 
+            color: #e53e3e; text-align: center; padding: 20px; 
+            background: #fed7d7; border-radius: 8px; border: 1px solid #feb2b2; 
+        }
+        
         .typhoon-data { border-left: 4px solid #dc3545; }
         .weather-data { border-left: 4px solid #28a745; }
         .alert-data { border-left: 4px solid #ffc107; }
-        .no-data { color: #6c757d; font-style: italic; text-align: center; padding: 20px; }
-        .collapsible { cursor: pointer; background: none; border: none; width: 100%; text-align: left; font-size: 18px; font-weight: bold; color: #495057; }
-        .collapsible:hover { background-color: #f1f3f4; }
-        .collapsible.active { background-color: #e9ecef; }
-        .content { display: none; overflow: hidden; }
-        .content.show { display: block; }
-        .toggle-icon { float: right; transition: transform 0.3s; }
-        .toggle-icon.rotated { transform: rotate(90deg); }
-        .risk-explanation { background: #fff8e1; border: 1px solid #ffcc02; border-radius: 8px; padding: 16px; margin: 16px 0; }
+        .api-stats-data { border-left: 4px solid #6f42c1; }
+        
+        .risk-explanation { 
+            background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%); 
+            border: 1px solid #ffcc02; border-radius: 12px; padding: 20px; margin: 16px 0; 
+        }
         .risk-explanation h3 { margin-top: 0; color: #f57c00; }
-        .disabled-notice { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; margin: 16px 0; color: #6c757d; text-align: center; }
+        
+        .disabled-notice { 
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); 
+            border: 1px solid #dee2e6; border-radius: 12px; padding: 20px; 
+            margin: 16px 0; color: #6c757d; text-align: center; 
+        }
+        
+        /* Responsive design */
+        @media (max-width: 768px) {
+            .container { margin: 10px; padding: 20px; }
+            .data-grid { grid-template-columns: 1fr; }
+            .data-controls { justify-content: center; }
+            .typhoon-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+        }
     </style>
 </head>
 <body>
