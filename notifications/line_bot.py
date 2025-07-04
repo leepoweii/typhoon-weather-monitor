@@ -377,9 +377,7 @@ class LineNotifier:
             return
         
         try:
-            flex_container_dict = self.flex_builder.create_test_notification_flex("🧪 LINE Bot Flex Message 測試成功！")
-            # 使用字典格式創建 FlexMessage
-            flex_message = FlexMessage(alt_text="系統測試通知", contents=flex_container_dict)
+            flex_message = self.flex_builder.create_test_notification_flex("🧪 LINE Bot Flex Message 測試成功！")
             
             for user_id in self.line_user_ids:
                 push_message = PushMessageRequest(

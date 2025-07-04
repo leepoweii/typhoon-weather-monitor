@@ -3,19 +3,50 @@
 {% block content %}
 <h1>🌀 颱風警訊播報系統</h1>
 <p class="update-time">最後更新: <span id="updateTime">載入中...</span></p>
-<div id="status">載入中...</div>
-<div id="travelRisk">載入中...</div>
-<div id="checkupRisk">載入中...</div>
-<div id="warnings">載入中...</div>
 
-<!-- 機場監控狀態提示 -->
-<div class="disabled-notice">
-    <h3>✈️ 機場監控狀態</h3>
-    <p>機場即時監控功能因 API 限制暫時禁用。航班風險評估基於天氣預報進行。</p>
-</div>
+<!-- 警告狀態區塊 -->
+<section class="warning-status-section">
+    <h2>⚠️ 警告狀態</h2>
+    
+    <div class="risk-cards">
+        <div class="risk-card flight-risk">
+            <h3>✈️ 7/6 金門 → 台南航班</h3>
+            <div class="risk-info">
+                <div class="risk-level">
+                    <span class="risk-label">風險等級：</span>
+                    <span id="flightRiskLevel" class="risk-value">載入中...</span>
+                </div>
+                <div class="risk-reason">
+                    <span class="reason-label">原因：</span>
+                    <span id="flightRiskReason" class="reason-value">載入中...</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="risk-card checkup-risk">
+            <h3>🏥 7/7 台南體檢</h3>
+            <div class="risk-info">
+                <div class="risk-level">
+                    <span class="risk-label">風險等級：</span>
+                    <span id="checkupRiskLevel" class="risk-value">載入中...</span>
+                </div>
+                <div class="risk-reason">
+                    <span class="reason-label">原因：</span>
+                    <span id="checkupRiskReason" class="reason-value">載入中...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 目前警報區塊 -->
+<section class="current-alerts-section">
+    <h2>📢 目前警報</h2>
+    <div id="currentAlerts" class="alerts-container">載入中...</div>
+</section>
 
 <!-- 中央氣象署颱風觀測地圖 -->
-<div class="typhoon-map-section">
+<section class="typhoon-map-section">
     <h2>🗺️ 中央氣象署颱風觀測地圖</h2>
     <div class="map-controls">
         <button onclick="toggleMap()" class="map-toggle-btn" id="mapToggleBtn">🗺️ 顯示地圖</button>
@@ -34,26 +65,28 @@
             <p>您的瀏覽器不支援 iframe。請 <a href="https://app.cwa.gov.tw/web/obsmap/typhoon.html" target="_blank">點擊這裡</a> 在新視窗開啟颱風觀測地圖。</p>
         </iframe>
     </div>
-</div>
+</section>
+
+<hr class="section-divider">
 
 <!-- 原始氣象資料區塊 -->
-<div class="raw-data-section">
-    <h2>📊 原始氣象資料</h2>
+<section class="raw-data-section">
+    <h2>📊 原始資料</h2>
     <div class="data-controls">
         <button onclick="refreshRawData()" class="refresh-btn">🔄 刷新資料</button>
         <button onclick="expandAll()" class="expand-btn">📖 展開全部</button>
         <button onclick="collapseAll()" class="collapse-btn">📘 收起全部</button>
     </div>
-    
-    <!-- 颱風資料 -->
-    <div class="raw-data-block typhoon-block">
-        <button class="collapsible" onclick="toggleContent('typhoon-content')">
-            <span>🌀</span> 颱風詳細資料
-            <span class="data-status" id="typhoon-status">載入中...</span>
-            <span class="toggle-icon" id="typhoon-toggle">▶</span>
+
+    <!-- 天氣特報資料 -->
+    <div class="raw-data-block alert-block">
+        <button class="collapsible" onclick="toggleContent('alert-content')">
+            <span>⚠️</span> 天氣特報
+            <span class="data-status" id="alert-status">載入中...</span>
+            <span class="toggle-icon" id="alert-toggle">▶</span>
         </button>
-        <div class="content" id="typhoon-content">
-            <div id="typhoonData" class="typhoon-data">載入中...</div>
+        <div class="content" id="alert-content">
+            <div id="alertData" class="alert-data">載入中...</div>
         </div>
     </div>
 
@@ -65,26 +98,155 @@
             <span class="toggle-icon" id="weather-toggle">▶</span>
         </button>
         <div class="content" id="weather-content">
-            <div id="weatherData" class="weather-data">載入中...</div>
+            <div class="weather-locations">
+                <h4>📍 台南 7/5 - 7/10 詳細天氣預報</h4>
+                <div id="tainanWeatherData" class="location-weather-data">載入中...</div>
+                
+                <h4>📍 金門 7/5 - 7/10 詳細天氣預報</h4>
+                <div id="kinmenWeatherData" class="location-weather-data">載入中...</div>
+            </div>
         </div>
     </div>
 
-    <!-- 特報資料 -->
-    <div class="raw-data-block alert-block">
-        <button class="collapsible" onclick="toggleContent('alert-content')">
-            <span>⚠️</span> 天氣特報資料
-            <span class="data-status" id="alert-status">載入中...</span>
-            <span class="toggle-icon" id="alert-toggle">▶</span>
+    <!-- 颱風詳細資料 -->
+    <div class="raw-data-block typhoon-block">
+        <button class="collapsible" onclick="toggleContent('typhoon-content')">
+            <span>🌀</span> 颱風詳細資料
+            <span class="data-status" id="typhoon-status">載入中...</span>
+            <span class="toggle-icon" id="typhoon-toggle">▶</span>
         </button>
-        <div class="content" id="alert-content">
-            <div id="alertData" class="alert-data">載入中...</div>
+        <div class="content" id="typhoon-content">
+            <div id="typhoonData" class="typhoon-data">載入中...</div>
         </div>
     </div>
+</section>
 
-    <!-- API 回應時間統計 -->
+<hr class="section-divider">
+
+<!-- 分析依據區塊 -->
+<section class="analysis-criteria-section">
+    <h2>📋 分析依據</h2>
+<!-- 分析依據區塊 -->
+<section class="analysis-criteria-section">
+    <h2>📋 分析依據</h2>
+    
+    <!-- 航班風險評估依據 -->
+    <div class="criteria-block flight-criteria">
+        <h3>✈️ 航班風險評估依據</h3>
+        
+        <div class="criteria-content">
+            <h4>🛬 機型側風限制標準</h4>
+            <ul>
+                <li><strong>A321 (Airbus A321)</strong>：最大側風限制 <span class="risk-high">38節 (70km/h)</span></li>
+                <li><strong>AT7 (ATR 72)</strong>：最大側風限制 <span class="risk-high">35節 (65km/h)</span></li>
+            </ul>
+            
+            <h4>🌪️ 航班風險等級判定</h4>
+            <ul>
+                <li><strong>高風險</strong>：側風 > 35節 或 颱風風速 > 80km/h 或 暴風圈影響金門機場</li>
+                <li><strong>中風險</strong>：側風 25-35節 或 颱風風速 60-80km/h 或 強風特報</li>
+                <li><strong>低風險</strong>：側風 < 25節 且 無颱風威脅</li>
+            </ul>
+            
+            <h4>🌧️ 天氣因子影響</h4>
+            <ul>
+                <li><strong>豪雨/大雨特報</strong>：能見度降低，影響起降安全</li>
+                <li><strong>雷雨胞活動</strong>：可能造成航班延誤或改降</li>
+                <li><strong>濃霧</strong>：嚴重影響機場作業</li>
+            </ul>
+            
+            <p class="safety-note">
+                <strong>⚠️ 航班安全提醒：</strong>超過側風限制時，機師可選擇重飛或改降其他機場。
+                航空公司亦可能基於安全考量，主動調整起降標準或取消航班。
+            </p>
+        </div>
+    </div>
+    
+    <!-- 體檢風險評估依據 -->
+    <div class="criteria-block checkup-criteria">
+        <h3>🏥 體檢風險評估依據</h3>
+        
+        <div class="criteria-content">
+            <h4>🌀 颱風影響評估</h4>
+            <ul>
+                <li><strong>高風險</strong>：颱風風速 > 80km/h 或 暴風圈影響台南地區</li>
+                <li><strong>中風險</strong>：颱風風速 60-80km/h 或 豪雨特報影響台南</li>
+                <li><strong>低風險</strong>：颱風距離台南 > 600km 且風速 < 60km/h</li>
+            </ul>
+            
+            <h4>🌧️ 天氣警報影響</h4>
+            <ul>
+                <li><strong>豪雨特報</strong>：可能造成交通中斷，影響體檢行程</li>
+                <li><strong>強風特報</strong>：戶外活動風險增加</li>
+                <li><strong>雷雨警報</strong>：建議避免外出或延後體檢</li>
+            </ul>
+            
+            <h4>🚗 交通安全考量</h4>
+            <ul>
+                <li><strong>道路積水</strong>：豪雨可能造成市區道路積水</li>
+                <li><strong>強風影響</strong>：側風可能影響駕駛安全</li>
+                <li><strong>能見度</strong>：大雨或濃霧影響行車視線</li>
+            </ul>
+            
+            <p class="safety-note">
+                <strong>⚠️ 體檢安全提醒：</strong>遇惡劣天氣建議延後體檢行程，確保往返交通安全。
+                可彈性調整體檢時間，以避開天氣高風險時段。
+            </p>
+        </div>
+    </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- 資料來源與整理方法 -->
+<section class="methodology-section">
+    <h2>📋 資料來源與整理方法</h2>
+    
+    <div class="methodology-content">
+        <h3>� 分析邏輯與方法說明</h3>
+        <ul>
+            <li><b>天氣特報</b>：直接採用中央氣象署API的警特報結果，若金門或台南有「颱風」或「強風」等現象，則列為警報。</li>
+            <li><b>颱風路徑</b>：
+                <ul>
+                    <li>若颱風最大風速 <b>超過60 km/h</b>，則列為警報。</li>
+                    <li>若颱風最大風速 <b>超過80 km/h</b>，則列為高風險警報。</li>
+                    <li>使用地理位置過濾，只考慮會影響台灣金門地區的颱風 (距離600km內)。</li>
+                    <li>結合風速強度和地理距離進行綜合評估。</li>
+                </ul>
+            </li>
+            <li><b>天氣預報</b>：
+                <ul>
+                    <li>若36小時內預報有「颱風」、「暴風」、「豪雨」、「大雨」等關鍵字，則列為警報。</li>
+                </ul>
+            </li>
+            <li><b>航班/體檢風險評估</b>：
+                <ul>
+                    <li>若有颱風警報，航班列為「高風險」；有強風則為「中風險」。</li>
+                    <li>台南有颱風警報，體檢列為「高風險」；有強風或豪雨則為「中風險」。</li>
+                    <li>體檢風險評估結合地理位置分析和基本風險評估。</li>
+                </ul>
+            </li>
+        </ul>
+        
+        <div class="api-notice">
+            <p><strong>📝 重要說明：</strong></p>
+            <ul>
+                <li>機場即時監控功能因 API 限制暫時禁用。航班風險評估基於天氣預報進行。</li>
+                <li>所有分析規則可於程式碼內各分析方法查閱與調整。</li>
+                <li>資料來源：中央氣象署開放資料平臺</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<hr class="section-divider">
+
+<!-- API 資料統計 -->
+<section class="api-stats-section">
+    <h2>📊 API 資料統計</h2>
     <div class="raw-data-block api-stats-block">
         <button class="collapsible" onclick="toggleContent('api-stats-content')">
-            <span>📊</span> API 資料統計
+            <span>📊</span> API 統計資訊
             <span class="data-status" id="api-stats-status">載入中...</span>
             <span class="toggle-icon" id="api-stats-toggle">▶</span>
         </button>
@@ -92,49 +254,7 @@
             <div id="apiStatsData" class="api-stats-data">載入中...</div>
         </div>
     </div>
-
-    <!-- 風險評估說明 -->
-    <div class="risk-explanation">
-        <h3>📋 風險評估依據</h3>
-        <ul>
-            <li><strong>颱風風速 &gt;80km/h</strong> = 高風險</li>
-            <li><strong>颱風風速 60-80km/h</strong> = 中風險</li>
-            <li><strong>大雨/豪雨預報</strong> = 中-高風險</li>
-            <li><strong>強風特報</strong> = 中風險</li>
-            <li><strong>暴風圈範圍</strong> = 高度關注</li>
-        </ul>
-    </div>
-</div>
-
-<div class="explain-block">
-    <h2>🔎 分析邏輯與方法說明</h2>
-    <ul>
-        <li><b>天氣特報</b>：直接採用中央氣象署API的警特報結果，若金門或台南有「颱風」或「強風」等現象，則列為警報。</li>
-        <li><b>颱風路徑</b>：
-            <ul>
-                <li>若颱風最大風速 <b>超過60 km/h</b>，則列為警報。</li>
-                <li>若颱風最大風速 <b>超過80 km/h</b>，則列為高風險警報。</li>
-                <li>使用地理位置過濾，只考慮會影響台灣金門地區的颱風 (距離600km內)。</li>
-                <li>結合風速強度和地理距離進行綜合評估。</li>
-            </ul>
-        </li>
-        <li><b>天氣預報</b>：
-            <ul>
-                <li>若36小時內預報有「颱風」、「暴風」、「豪雨」、「大雨」等關鍵字，則列為警報。</li>
-            </ul>
-        </li>
-        <li><b>航班/體檢風險評估</b>：
-            <ul>
-                <li>若有颱風警報，航班列為「高風險」；有強風則為「中風險」。</li>
-                <li>台南有颱風警報，體檢列為「高風險」；有強風或豪雨則為「中風險」。</li>
-                <li>體檢風險評估結合地理位置分析和基本風險評估。</li>
-            </ul>
-        </li>
-    </ul>
-    <p style="color:#555;font-size:14px;">
-        機場即時監控功能因 API 限制暫時禁用。所有分析規則可於程式碼內各分析方法查閱與調整。
-    </p>
-</div>
+</section>
 
 <script>
     function toggleContent(contentId) {
@@ -151,20 +271,24 @@
     }
 
     function expandAll() {
-        ['typhoon-content', 'weather-content', 'alert-content', 'api-stats-content'].forEach(contentId => {
+        ['typhoon-content', 'alert-content', 'api-stats-content'].forEach(contentId => {
             const content = document.getElementById(contentId);
             const toggleIcon = document.getElementById(contentId.replace('-content', '-toggle'));
-            content.classList.add('show');
-            toggleIcon.classList.add('rotated');
+            if (content && toggleIcon) {
+                content.classList.add('show');
+                toggleIcon.classList.add('rotated');
+            }
         });
     }
 
     function collapseAll() {
-        ['typhoon-content', 'weather-content', 'alert-content', 'api-stats-content'].forEach(contentId => {
+        ['typhoon-content', 'alert-content', 'api-stats-content'].forEach(contentId => {
             const content = document.getElementById(contentId);
             const toggleIcon = document.getElementById(contentId.replace('-content', '-toggle'));
-            content.classList.remove('show');
-            toggleIcon.classList.remove('rotated');
+            if (content && toggleIcon) {
+                content.classList.remove('show');
+                toggleIcon.classList.remove('rotated');
+            }
         });
     }
 
@@ -477,26 +601,59 @@
             const response = await fetch('/api/status');
             const data = await response.json();
             document.getElementById('updateTime').textContent = new Date(data.timestamp).toLocaleString('zh-TW');
-            const statusDiv = document.getElementById('status');
-            if (data.status === 'DANGER') {
-                statusDiv.innerHTML = '<div class="status-danger">🔴 警告狀態: 有風險</div>';
-            } else {
-                statusDiv.innerHTML = '<div class="status-safe">🟢 安全狀態: 無明顯風險</div>';
+            
+            // 更新航班風險信息
+            const flightRiskLevel = document.getElementById('flightRiskLevel');
+            const flightRiskReason = document.getElementById('flightRiskReason');
+            if (flightRiskLevel && flightRiskReason) {
+                flightRiskLevel.innerHTML = `<span class="risk-${getRiskClass(data.travel_risk)}">${data.travel_risk}</span>`;
+                flightRiskReason.textContent = getFlightRiskReason(data);
             }
-            document.getElementById('travelRisk').innerHTML = `<p>✈️ 7/6 金門→台南航班風險: <span class="risk-${getRiskClass(data.travel_risk)}">${data.travel_risk}</span></p>`;
-            document.getElementById('checkupRisk').innerHTML = `<p>🏥 7/7 台南體檢風險: <span class="risk-${getRiskClass(data.checkup_risk)}">${data.checkup_risk}</span></p>`;
-            const warningsDiv = document.getElementById('warnings');
+            
+            // 更新體檢風險信息
+            const checkupRiskLevel = document.getElementById('checkupRiskLevel');
+            const checkupRiskReason = document.getElementById('checkupRiskReason');
+            if (checkupRiskLevel && checkupRiskReason) {
+                checkupRiskLevel.innerHTML = `<span class="risk-${getRiskClass(data.checkup_risk)}">${data.checkup_risk}</span>`;
+                checkupRiskReason.textContent = getCheckupRiskReason(data);
+            }
+            
+            // 更新當前警報
+            const currentAlertsDiv = document.getElementById('currentAlerts');
             if (data.warnings.length > 0) {
-                warningsDiv.innerHTML = '<h3>📢 目前警報:</h3>' + 
-                    data.warnings.map(w => `<div class="warning-item">${w}</div>`).join('');
+                let alertsHtml = '';
+                data.warnings.forEach(warning => {
+                    alertsHtml += `<div class="alert-item">${warning}</div>`;
+                });
+                currentAlertsDiv.innerHTML = alertsHtml;
             } else {
-                warningsDiv.innerHTML = '<h3>✅ 目前無特殊警報</h3>';
+                currentAlertsDiv.innerHTML = '<div class="no-alerts">✅ 目前無特殊警報</div>';
             }
 
             await updateRawData();
             
         } catch (error) {
             console.error('更新資料失敗:', error);
+        }
+    }
+
+    function getFlightRiskReason(data) {
+        if (data.travel_risk.includes('高風險')) {
+            return '颱風風速過高或暴風圈影響金門機場，可能導致航班取消或延誤';
+        } else if (data.travel_risk.includes('中風險')) {
+            return '有強風特報或中度颱風影響，建議密切關注航班動態';
+        } else {
+            return '天氣條件良好，預期正常起降';
+        }
+    }
+
+    function getCheckupRiskReason(data) {
+        if (data.checkup_risk.includes('高風險')) {
+            return '颱風直接影響台南地區，建議延後體檢行程確保安全';
+        } else if (data.checkup_risk.includes('中風險')) {
+            return '有豪雨或強風警報，外出需注意交通安全';
+        } else {
+            return '天氣狀況穩定，適合進行體檢行程';
         }
     }
 
@@ -514,8 +671,11 @@
             
             // 更新資料內容
             document.getElementById('typhoonData').innerHTML = formatRawData(rawData.typhoons, 'typhoon');
-            document.getElementById('weatherData').innerHTML = formatRawData(rawData.weather, 'weather');
             document.getElementById('alertData').innerHTML = formatRawData(rawData.alerts, 'alert');
+            
+            // 分別更新台南和金門的天氣資料
+            updateLocationWeatherData(rawData.weather, 'tainanWeatherData', '台南市');
+            updateLocationWeatherData(rawData.weather, 'kinmenWeatherData', '金門縣');
             
             // 更新 API 統計
             document.getElementById('apiStatsData').innerHTML = formatApiStats(rawData, loadTime);
@@ -523,9 +683,91 @@
         } catch (error) {
             console.error('更新原始資料失敗:', error);
             document.getElementById('typhoonData').innerHTML = '<div class="error-data">❌ 資料載入失敗</div>';
-            document.getElementById('weatherData').innerHTML = '<div class="error-data">❌ 資料載入失敗</div>';
             document.getElementById('alertData').innerHTML = '<div class="error-data">❌ 資料載入失敗</div>';
+            if (document.getElementById('tainanWeatherData')) {
+                document.getElementById('tainanWeatherData').innerHTML = '<div class="error-data">❌ 資料載入失敗</div>';
+            }
+            if (document.getElementById('kinmenWeatherData')) {
+                document.getElementById('kinmenWeatherData').innerHTML = '<div class="error-data">❌ 資料載入失敗</div>';
+            }
         }
+    }
+
+    function updateLocationWeatherData(weatherData, elementId, locationName) {
+        const element = document.getElementById(elementId);
+        if (!element) return;
+        
+        try {
+            const records = weatherData.records || {};
+            const locations = records.location || [];
+            const targetLocation = locations.find(loc => loc.locationName && loc.locationName.includes(locationName));
+            
+            if (targetLocation) {
+                element.innerHTML = formatLocationWeather(targetLocation);
+            } else {
+                element.innerHTML = `<div class="no-data">📭 無 ${locationName} 天氣資料</div>`;
+            }
+        } catch (error) {
+            console.error(`更新 ${locationName} 天氣資料失敗:`, error);
+            element.innerHTML = '<div class="error-data">❌ 資料載入失敗</div>';
+        }
+    }
+
+    function formatLocationWeather(location) {
+        const locationName = location.locationName || '未知地區';
+        const elements = location.weatherElement || [];
+        
+        let html = `<div class="location-weather-card">`;
+        html += `<div class="data-grid">`;
+        
+        // 整理資料結構，方便顯示
+        const weatherInfo = {};
+        elements.forEach(element => {
+            const elementName = element.elementName || '';
+            const times = element.time || [];
+            
+            if (times.length > 0) {
+                const latestTime = times[0];
+                const value = latestTime.parameter?.parameterName || '';
+                const startTime = latestTime.startTime || '';
+                
+                weatherInfo[elementName] = { value, startTime };
+            }
+        });
+        
+        // 按優先順序顯示天氣資訊
+        if (weatherInfo.Wx && weatherInfo.Wx.value) {
+            const weatherIcon = getWeatherIcon(weatherInfo.Wx.value);
+            html += `<div class="data-item weather-phenomenon"><div class="data-item-label">${weatherIcon} 天氣現象</div><div class="data-item-value">${weatherInfo.Wx.value}<br><small>${weatherInfo.Wx.startTime.substring(0, 16)}</small></div></div>`;
+        }
+        
+        if (weatherInfo.PoP && weatherInfo.PoP.value) {
+            const rainIcon = getRainIcon(weatherInfo.PoP.value);
+            html += `<div class="data-item rain-probability"><div class="data-item-label">${rainIcon} 降雨機率</div><div class="data-item-value">${weatherInfo.PoP.value}%</div></div>`;
+        }
+        
+        // 溫度範圍
+        const minTemp = weatherInfo.MinT?.value;
+        const maxTemp = weatherInfo.MaxT?.value;
+        if (minTemp && maxTemp) {
+            const tempIcon = getTempIcon(maxTemp);
+            html += `<div class="data-item temperature-range"><div class="data-item-label">${tempIcon} 溫度範圍</div><div class="data-item-value">${minTemp}°C ~ ${maxTemp}°C</div></div>`;
+        } else {
+            if (minTemp) {
+                html += `<div class="data-item"><div class="data-item-label">🌡️ 最低溫度</div><div class="data-item-value">${minTemp}°C</div></div>`;
+            }
+            if (maxTemp) {
+                html += `<div class="data-item"><div class="data-item-label">🌡️ 最高溫度</div><div class="data-item-value">${maxTemp}°C</div></div>`;
+            }
+        }
+        
+        if (weatherInfo.CI && weatherInfo.CI.value) {
+            const comfortIcon = getComfortIcon(weatherInfo.CI.value);
+            html += `<div class="data-item comfort-index"><div class="data-item-label">${comfortIcon} 舒適度</div><div class="data-item-value">${weatherInfo.CI.value}</div></div>`;
+        }
+        
+        html += `</div></div>`;
+        return html;
     }
 
     function updateDataStatus(type, data) {
