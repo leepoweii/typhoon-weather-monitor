@@ -109,8 +109,8 @@ async def check_and_send_line_notification(result: dict):
         # 設置用戶ID
         line_notifier.set_user_ids(line_user_ids)
         
-        # 發送Flex Message通知
-        await line_notifier.push_typhoon_status_flex(result)
+        # 發送文字通知
+        await line_notifier.push_typhoon_status(result)
         
         # 更新狀態
         last_notification_status = current_status
@@ -139,7 +139,7 @@ def handle_message(event):
         async def handle_typhoon_status():
             try:
                 result = await monitor.check_all_conditions()
-                await line_notifier.reply_typhoon_status_flex(event.reply_token, result)
+                await line_notifier.reply_typhoon_status(event.reply_token, result)
             except Exception as e:
                 logger.error(f"處理颱風狀態失敗: {e}")
                 await line_notifier.reply_message(event.reply_token, f"系統暫時無法取得氣象資料，請稍後再試。錯誤: {str(e)}")
@@ -235,7 +235,7 @@ async def send_test_notification():
     
     try:
         line_notifier.set_user_ids(line_user_ids)
-        await line_notifier.send_test_notification_flex()
+        await line_notifier.send_test_notification()
         return {
             "success": True,
             "message": f"測試通知已發送給 {len(line_user_ids)} 位好友"

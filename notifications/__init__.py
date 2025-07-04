@@ -1,9 +1,9 @@
 """
 Notifications module for Typhoon Weather Monitor
-Handles LINE Bot notifications and Flex Message creation
+Handles LINE Bot notifications with text-only messaging
 """
 
-from .flex_message_builder import FlexMessageBuilder
+# FlexMessageBuilder disabled - using text-only messaging
 from .line_bot import LineNotifier, create_webhook_handler
 
-__all__ = ['FlexMessageBuilder', 'LineNotifier', 'create_webhook_handler']
+__all__ = ['LineNotifier', 'create_webhook_handler']

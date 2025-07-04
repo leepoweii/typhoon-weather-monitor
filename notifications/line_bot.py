@@ -10,10 +10,9 @@ from typing import Dict, List
 from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import (
     Configuration, ApiClient, MessagingApi, PushMessageRequest, ReplyMessageRequest, 
-    TextMessage, FlexMessage
+    TextMessage
 )
 from config.settings import settings
-from notifications.flex_message_builder import FlexMessageBuilder
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +25,7 @@ class LineNotifier:
         self.api_client = ApiClient(self.configuration)
         self.line_bot_api = MessagingApi(self.api_client)
         
-        # Initialize FlexMessageBuilder
-        app_url = os.getenv("APP_URL", settings.get_base_url())
-        self.flex_builder = FlexMessageBuilder(base_url=app_url)
+        # Text-only messaging - no FlexMessage builder needed
         
         # Store user IDs for notifications
         self.line_user_ids = []
@@ -289,28 +286,17 @@ class LineNotifier:
         
         return weather_info.strip()
     
-    async def push_typhoon_status_flex(self, result: Dict):
-        """推送颱風狀態 Flex Message 給所有好友"""
+    async def push_typhoon_status(self, result: Dict):
+        """推送颱風狀態文字訊息給所有好友"""
         if not self.line_user_ids:
             logger.warning("沒有LINE好友ID，無法發送推送訊息")
             return
         
         try:
-            # FlexMessageBuilder 返回的是 FlexMessage 物件，不是字典
-            flex_message = self.flex_builder.create_typhoon_status_flex(result)
-            
-            for user_id in self.line_user_ids:
-                push_message = PushMessageRequest(
-                    to=user_id,
-                    messages=[flex_message]
-                )
-                self.line_bot_api.push_message(push_message)
-            logger.info(f"成功推送 Flex Message 給 {len(self.line_user_ids)} 位好友")
-        except Exception as e:
-            logger.error(f"LINE Flex 推送失敗，嘗試文字版本: {e}")
-            # 失敗時回退到文字訊息
             text_message = self.format_typhoon_status(result)
             await self.push_to_all_friends(text_message)
+        except Exception as e:
+            logger.error(f"LINE 推送失敗: {e}")
     
     async def push_airport_status_flex(self, airport_data: Dict):
         """推送機場狀態 Flex Message 給所有好友（已禁用）"""
@@ -338,28 +324,18 @@ class LineNotifier:
         """推送純文字訊息給所有用戶"""
         await self.push_to_all_friends(message)
     
-    async def reply_typhoon_status_flex(self, reply_token: str, result: Dict):
-        """回覆颱風狀態 Flex Message"""
+    async def reply_typhoon_status(self, reply_token: str, result: Dict):
+        """回覆颱風狀態文字訊息"""
         try:
-            # FlexMessageBuilder 返回的是 FlexMessage 物件，不是字典
-            flex_message = self.flex_builder.create_typhoon_status_flex(result)
-            
-            reply_message = ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[flex_message]
-            )
-            self.line_bot_api.reply_message(reply_message)
-            logger.info("成功回覆 Flex Message")
+            text_message = self.format_typhoon_status(result)
+            await self.reply_message(reply_token, text_message)
         except Exception as e:
             error_msg = str(e)
             if "Invalid reply token" in error_msg:
                 logger.warning(f"Reply token 已過期或無效，跳過回覆: {reply_token}")
                 return
             else:
-                logger.error(f"LINE Flex 回覆失敗，嘗試文字版本: {e}")
-                # 失敗時回退到文字訊息
-                text_message = self.format_typhoon_status(result)
-                await self.reply_message(reply_token, text_message)
+                logger.error(f"LINE 回覆失敗: {e}")
     
     async def reply_message(self, reply_token: str, message: str):
         """回覆文字訊息（備用方法）"""
@@ -379,24 +355,18 @@ class LineNotifier:
             else:
                 logger.error(f"LINE回覆失敗: {e}")
     
-    async def send_test_notification_flex(self):
-        """發送測試 Flex Message"""
+    async def send_test_notification(self):
+        """發送測試文字訊息"""
         if not self.line_user_ids:
             logger.warning("沒有LINE好友ID，無法發送測試訊息")
             return
         
         try:
-            flex_message = self.flex_builder.create_test_notification_flex("🧪 LINE Bot Flex Message 測試成功！")
-            
-            for user_id in self.line_user_ids:
-                push_message = PushMessageRequest(
-                    to=user_id,
-                    messages=[flex_message]
-                )
-                self.line_bot_api.push_message(push_message)
-            logger.info(f"成功發送測試 Flex Message 給 {len(self.line_user_ids)} 位好友")
+            test_message = f"🧪 LINE Bot 測試成功！\n\n✅ LINE Bot 連線正常\n📡 監控系統運作中\n🔔 通知功能正常\n\n時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            await self.push_to_all_friends(test_message)
+            logger.info(f"成功發送測試訊息給 {len(self.line_user_ids)} 位好友")
         except Exception as e:
-            logger.error(f"測試 Flex Message 發送失敗: {e}")
+            logger.error(f"測試訊息發送失敗: {e}")
 
 # LINE Bot Webhook Handler
 def create_webhook_handler() -> WebhookHandler:

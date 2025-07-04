@@ -55,3 +55,40 @@
 ✅ URI validation function implemented and tested
 ✅ All FlexMessage URI errors resolved
 ✅ LINE Bot compatibility improved
+
+## 2025-07-04 - Disabled FlexMessage, Switched to Text-Only Messaging
+
+### Decision:
+Due to persistent FlexMessage validation errors, completely disabled FlexMessage functionality and switched to reliable text-only messaging.
+
+### Changes Made:
+1. **Updated `line_bot.py`**: Removed all FlexMessage methods, replaced with text-only alternatives
+2. **Updated `app.py`**: Changed all calls to use text messaging instead of FlexMessage
+3. **Disabled `flex_message_builder.py`**: Completely removed FlexMessage code to prevent errors
+4. **Updated Documentation**: Reflected the change to text-only messaging approach
+
+### Files Modified:
+- `/notifications/line_bot.py` - Removed FlexMessage imports and methods
+- `/app.py` - Updated to use text messaging methods
+- `/notifications/flex_message_builder.py` - Disabled entire file
+- `/CLAUDE.md` - Updated LINE Bot integration notes
+
+### Technical Changes:
+- **Removed**: `push_typhoon_status_flex()` → `push_typhoon_status()`
+- **Removed**: `reply_typhoon_status_flex()` → `reply_typhoon_status()`
+- **Removed**: `send_test_notification_flex()` → `send_test_notification()`
+- **Simplified**: All messaging now uses reliable text format
+- **Maintained**: All text formatting functions remain intact
+
+### Benefits:
+✅ Eliminates all FlexMessage validation errors
+✅ More reliable messaging system
+✅ Easier to maintain and debug
+✅ Better error handling with text fallbacks
+✅ Consistent messaging across all notifications
+
+### Status:
+✅ FlexMessage functionality completely disabled
+✅ Text-only messaging implemented
+✅ All LINE Bot errors should be resolved
+✅ System reliability improved

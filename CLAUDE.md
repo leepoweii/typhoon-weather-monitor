@@ -113,13 +113,11 @@ typhoon-weather-monitor/
 - Can be re-enabled once API access is obtained
 
 ### LINE Bot Integration
-- FlexMessage objects must be returned as objects, not JSON strings
-- Use `FlexContainer.from_json()` for proper object creation from JSON strings
-- FlexMessageBuilder returns FlexMessage objects directly, not dictionaries
-- Avoid serializing objects to JSON unnecessarily
+- **TEXT-ONLY MESSAGING**: FlexMessage functionality is disabled due to validation complexities
+- System uses reliable text messaging only - no visual formatting
 - Reply tokens expire quickly; handle "Invalid reply token" errors gracefully
-- URI validation required: LINE Bot rejects localhost URLs and requires proper schemes (http/https)
-- Use `validate_uri()` function for all button action URIs in FlexMessages
+- Text messages are more reliable and easier to maintain than FlexMessages
+- FlexMessageBuilder is disabled - can be restored from git history if needed
 
 ### Risk Assessment
 - Tainan risk assessment includes geographic analysis
