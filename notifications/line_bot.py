@@ -296,9 +296,8 @@ class LineNotifier:
             return
         
         try:
-            flex_container_dict = self.flex_builder.create_typhoon_status_flex(result)
-            # 使用字典格式創建 FlexMessage
-            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container_dict)
+            # FlexMessageBuilder 返回的是 FlexMessage 物件，不是字典
+            flex_message = self.flex_builder.create_typhoon_status_flex(result)
             
             for user_id in self.line_user_ids:
                 push_message = PushMessageRequest(
@@ -342,9 +341,8 @@ class LineNotifier:
     async def reply_typhoon_status_flex(self, reply_token: str, result: Dict):
         """回覆颱風狀態 Flex Message"""
         try:
-            flex_container_dict = self.flex_builder.create_typhoon_status_flex(result)
-            # 使用字典格式創建 FlexMessage
-            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container_dict)
+            # FlexMessageBuilder 返回的是 FlexMessage 物件，不是字典
+            flex_message = self.flex_builder.create_typhoon_status_flex(result)
             
             reply_message = ReplyMessageRequest(
                 reply_token=reply_token,
@@ -353,10 +351,15 @@ class LineNotifier:
             self.line_bot_api.reply_message(reply_message)
             logger.info("成功回覆 Flex Message")
         except Exception as e:
-            logger.error(f"LINE Flex 回覆失敗，嘗試文字版本: {e}")
-            # 失敗時回退到文字訊息
-            text_message = self.format_typhoon_status(result)
-            await self.reply_message(reply_token, text_message)
+            error_msg = str(e)
+            if "Invalid reply token" in error_msg:
+                logger.warning(f"Reply token 已過期或無效，跳過回覆: {reply_token}")
+                return
+            else:
+                logger.error(f"LINE Flex 回覆失敗，嘗試文字版本: {e}")
+                # 失敗時回退到文字訊息
+                text_message = self.format_typhoon_status(result)
+                await self.reply_message(reply_token, text_message)
     
     async def reply_message(self, reply_token: str, message: str):
         """回覆文字訊息（備用方法）"""
@@ -368,7 +371,13 @@ class LineNotifier:
             self.line_bot_api.reply_message(reply_message)
             logger.info("成功回覆LINE訊息")
         except Exception as e:
-            logger.error(f"LINE回覆失敗: {e}")
+            error_msg = str(e)
+            if "Invalid reply token" in error_msg:
+                logger.warning(f"Reply token 已過期或無效: {reply_token}")
+                # Reply token 過期時，不再嘗試回覆，避免重複錯誤
+                return
+            else:
+                logger.error(f"LINE回覆失敗: {e}")
     
     async def send_test_notification_flex(self):
         """發送測試 Flex Message"""

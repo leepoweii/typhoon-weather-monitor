@@ -114,8 +114,10 @@ typhoon-weather-monitor/
 
 ### LINE Bot Integration
 - FlexMessage objects must be returned as objects, not JSON strings
-- Use `FlexContainer.from_dict()` for proper object creation
+- Use `FlexContainer.from_json()` for proper object creation from JSON strings
+- FlexMessageBuilder returns FlexMessage objects directly, not dictionaries
 - Avoid serializing objects to JSON unnecessarily
+- Reply tokens expire quickly; handle "Invalid reply token" errors gracefully
 
 ### Risk Assessment
 - Tainan risk assessment includes geographic analysis

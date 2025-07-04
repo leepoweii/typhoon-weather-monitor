@@ -45,8 +45,27 @@ class FlexMessageBuilder:
                 ]
             }
         }
-        flex_container = FlexContainer.from_json(json.dumps(error_content))
-        return FlexMessage(alt_text=alt_text, contents=flex_container)
+        try:
+            flex_container = FlexContainer.from_json(json.dumps(error_content))
+            return FlexMessage(alt_text=alt_text, contents=flex_container)
+        except Exception as e:
+            logger.error(f"Error creating error flex message: {e}")
+            # If FlexContainer creation fails, return a simple text message wrapped in FlexMessage
+            simple_error = {
+                "type": "bubble",
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": main_text
+                        }
+                    ]
+                }
+            }
+            flex_container = FlexContainer.from_json(json.dumps(simple_error))
+            return FlexMessage(alt_text=alt_text, contents=flex_container)
     # (class-level docstring removed, see __init__ for details)
 
     def __init__(self, base_url: str = None):
@@ -248,8 +267,13 @@ class FlexMessageBuilder:
                 }
             }
 
-            flex_container = FlexContainer.from_json(json.dumps(flex_content))
-            return FlexMessage(alt_text="颱風警訊通知", contents=flex_container)
+            try:
+                flex_container = FlexContainer.from_json(json.dumps(flex_content))
+                return FlexMessage(alt_text="颱風警訊通知", contents=flex_container)
+            except Exception as json_error:
+                logger.error(f"Error creating FlexContainer from JSON: {json_error}")
+                logger.error(f"JSON content: {json.dumps(flex_content, indent=2)}")
+                raise
 
         except KeyError as e:
             logger.error(f"Missing key in result data for flex message: {e}")
@@ -295,8 +319,12 @@ class FlexMessageBuilder:
                 ]
             }
         }
-        flex_container = FlexContainer.from_json(json.dumps(flex_content))
-        return FlexMessage(alt_text="機場功能已禁用", contents=flex_container)
+        try:
+            flex_container = FlexContainer.from_json(json.dumps(flex_content))
+            return FlexMessage(alt_text="機場功能已禁用", contents=flex_container)
+        except Exception as json_error:
+            logger.error(f"Error creating airport status FlexContainer: {json_error}")
+            return self._error_flex_message("建立失敗", "機場功能已禁用", "無法建立機場狀態通知")
 
     def create_test_notification_flex(self, message: str = "這是測試訊息") -> 'FlexMessage':
         """
@@ -375,8 +403,12 @@ class FlexMessageBuilder:
                 "margin": "sm"
             }
         }
-        flex_container = FlexContainer.from_json(json.dumps(flex_content))
-        return FlexMessage(alt_text="系統測試", contents=flex_container)
+        try:
+            flex_container = FlexContainer.from_json(json.dumps(flex_content))
+            return FlexMessage(alt_text="系統測試", contents=flex_container)
+        except Exception as json_error:
+            logger.error(f"Error creating test notification FlexContainer: {json_error}")
+            return self._error_flex_message("建立失敗", "系統測試", "無法建立測試通知")
 
     def create_carousel_flex(self, bubbles: List[Dict]) -> 'FlexMessage':
         """
@@ -392,8 +424,12 @@ class FlexMessageBuilder:
             "type": "carousel",
             "contents": bubbles
         }
-        flex_container = FlexContainer.from_json(json.dumps(flex_content))
-        return FlexMessage(alt_text="多項資訊", contents=flex_container)
+        try:
+            flex_container = FlexContainer.from_json(json.dumps(flex_content))
+            return FlexMessage(alt_text="多項資訊", contents=flex_container)
+        except Exception as json_error:
+            logger.error(f"Error creating carousel FlexContainer: {json_error}")
+            return self._error_flex_message("建立失敗", "多項資訊", "無法建立輪播訊息")
 
     def _get_typhoon_details_flex_content(self) -> List[Dict]:
         """獲取颱風詳細資料的 Flex Message 內容"""
