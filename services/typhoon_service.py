@@ -129,9 +129,10 @@ class TyphoonService:
                             warnings.extend(threat_assessment['forecast_warnings'])
                             
                         # 計算關鍵區域的詳細時間預估
-                        regional_timing = self._calculate_regional_timing(typhoon, name)
-                        if regional_timing:
-                            warnings.extend(regional_timing)
+                        regional_timing_details = self._calculate_regional_timing(typhoon, name)
+                        if regional_timing_details:
+                            timing_warnings = self._format_timing_warnings(regional_timing_details)
+                            warnings.extend(timing_warnings)
             
             # 舊的颱風資料結構（向後兼容）
             elif 'typhoon' in records:
@@ -312,24 +313,19 @@ class TyphoonService:
         
         return R * c
     
-    def _calculate_regional_timing(self, typhoon: dict, typhoon_name: str) -> List[str]:
-        """計算颱風接近和離開金門、台南的詳細時間"""
-        timing_warnings = []
+    def _calculate_regional_timing(self, typhoon: dict, typhoon_name: str) -> List[Dict]:
+        """計算颱風接近和離開金門、台南的詳細時間，回傳結構化資料"""
+        timing_details = []
         
         try:
-            from datetime import datetime, timedelta
-            
             forecast_data = typhoon.get('forecastData', {})
             forecast_fixes = forecast_data.get('fix', [])
             
             if not forecast_fixes:
-                return timing_warnings
+                return timing_details
             
-            # 為每個關鍵區域計算時間
             for region_name, (region_lat, region_lon) in KEY_REGIONS.items():
                 approach_data = []
-                
-                # 分析預報點，找出接近和離開時間
                 for forecast in forecast_fixes:
                     if not isinstance(forecast, dict):
                         continue
@@ -343,7 +339,6 @@ class TyphoonService:
                             distance = self._calculate_distance(lat, lon, region_lat, region_lon)
                             tau_hours = int(tau)
                             
-                            # 收集距離數據
                             approach_data.append({
                                 'tau': tau_hours,
                                 'distance': distance,
@@ -355,100 +350,109 @@ class TyphoonService:
                 if not approach_data:
                     continue
                 
-                # 按時間排序
                 approach_data.sort(key=lambda x: x['tau'])
-                
-                # 找出最接近的點
                 closest_point = min(approach_data, key=lambda x: x['distance'])
                 
-                # 只有當最接近距離在威脅範圍內才計算
                 if closest_point['distance'] <= self.threat_radii["moderate"]:
-                    approach_time, depart_time = self._calculate_approach_depart_times(
+                    timing_result = self._calculate_approach_depart_times(
                         approach_data, region_name, closest_point
                     )
                     
-                    if approach_time and depart_time:
-                        # 生成時間預估消息
-                        now = datetime.now()
-                        approach_dt = now + timedelta(hours=approach_time)
-                        depart_dt = now + timedelta(hours=depart_time)
-                        
-                        summary_msg = WARNING_TEMPLATES["typhoon_summary"].format(
-                            name=typhoon_name,
-                            region=region_name,
-                            approach_time=f"{approach_dt.strftime('%m/%d %H:%M')} ({approach_time}h)",
-                            depart_time=f"{depart_dt.strftime('%m/%d %H:%M')} ({depart_time}h)"
-                        )
-                        timing_warnings.append(summary_msg)
-                    
-                    elif approach_time:  # 只有接近時間
-                        now = datetime.now()
-                        approach_dt = now + timedelta(hours=approach_time)
-                        
-                        timing_msg = WARNING_TEMPLATES["typhoon_timing"].format(
-                            name=typhoon_name,
-                            action="接近",
-                            region=region_name,
-                            time_str=approach_dt.strftime('%m/%d %H:%M'),
-                            tau=approach_time
-                        )
-                        timing_warnings.append(timing_msg)
+                    if timing_result["approach_time"] is not None and timing_result["depart_time"] is not None:
+                        timing_details.append({
+                            "region_name": region_name,
+                            "typhoon_name": typhoon_name,
+                            "approach_time_hours": timing_result["approach_time"],
+                            "depart_time_hours": timing_result["depart_time"],
+                            "is_depart_estimated": timing_result["is_estimated"],
+                            "closest_point": closest_point,
+                            "raw_data": approach_data
+                        })
         
         except Exception as e:
             logger.error(f"計算區域時間失敗: {e}")
         
-        return timing_warnings
+        return timing_details
+
+    def _format_timing_warnings(self, timing_details: List[Dict]) -> List[str]:
+        """根據詳細時間資料生成警告字串"""
+        warnings = []
+        from datetime import datetime, timedelta
+
+        for detail in timing_details:
+            now = datetime.now()
+            approach_dt = now + timedelta(hours=detail["approach_time_hours"])
+            depart_dt = now + timedelta(hours=detail["depart_time_hours"])
+
+            depart_str = f"{depart_dt.strftime('%m/%d %H:%M')} ({detail['depart_time_hours']}h)"
+            if detail["is_depart_estimated"]:
+                depart_str += "*"
+
+            summary_msg = WARNING_TEMPLATES["typhoon_summary"].format(
+                name=detail["typhoon_name"],
+                region=detail["region_name"],
+                approach_time=f"{approach_dt.strftime('%m/%d %H:%M')} ({detail['approach_time_hours']}h)",
+                depart_time=depart_str
+            )
+            warnings.append(summary_msg)
+        
+        return warnings
     
-    def _calculate_approach_depart_times(self, approach_data: List[dict], region_name: str, closest_point: dict) -> tuple:
-        """計算接近和離開時間"""
+    def _calculate_approach_depart_times(self, approach_data: List[dict], region_name: str, closest_point: dict) -> dict:
+        """計算接近和離開時間，並標記是否為估算值"""
         try:
-            # 影響半徑設定（距離該區域多遠算"影響"）
             influence_radius = self.threat_radii["moderate"]  # 400km
             
             approach_time = None
             depart_time = None
+            is_depart_estimated = False
             
-            # 按時間排序的數據
             sorted_data = sorted(approach_data, key=lambda x: x['tau'])
             
-            # 找接近時間：第一次進入影響範圍
+            # Find approach time
             for data in sorted_data:
                 if data['distance'] <= influence_radius:
                     approach_time = data['tau']
                     break
             
-            # 找離開時間：最後一次在影響範圍內之後的時間點
+            # Find departure time
             last_inside_index = -1
             for i, data in enumerate(sorted_data):
                 if data['distance'] <= influence_radius:
                     last_inside_index = i
             
-            if last_inside_index >= 0:
-                # 找到最後一個在影響範圍內的點
+            if last_inside_index != -1:
                 if last_inside_index < len(sorted_data) - 1:
-                    # 有下一個預報點，檢查是否在影響範圍外
                     next_data = sorted_data[last_inside_index + 1]
                     if next_data['distance'] > influence_radius:
                         depart_time = next_data['tau']
                     else:
-                        # 下一個點還在影響範圍內，估算離開時間
                         last_tau = sorted_data[last_inside_index]['tau']
-                        depart_time = last_tau + 12  # 估算12小時後離開
+                        depart_time = last_tau + 12
+                        is_depart_estimated = True
                 else:
-                    # 這是最後一個預報點，估算離開時間
                     last_tau = sorted_data[last_inside_index]['tau']
-                    depart_time = last_tau + 12  # 估算12小時後離開
-            
-            # 如果沒找到接近時間，但最接近點在合理範圍內，給出時間估算
+                    depart_time = last_tau + 12
+                    is_depart_estimated = True
+
             if not approach_time and closest_point['distance'] <= self.threat_radii["indirect"]:
                 approach_time = closest_point['tau']
-                depart_time = closest_point['tau'] + 6  # 估算6小時後離開
-            
-            return approach_time, depart_time
-            
+                depart_time = closest_point['tau'] + 6
+                is_depart_estimated = True
+
+            return {
+                "approach_time": approach_time,
+                "depart_time": depart_time,
+                "is_estimated": is_depart_estimated
+            }
+
         except Exception as e:
             logger.error(f"計算接近離開時間失敗: {e}")
-            return None, None
+            return {
+                "approach_time": None,
+                "depart_time": None,
+                "is_estimated": False
+            }
     
     async def close(self):
         """關閉HTTP客戶端"""

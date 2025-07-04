@@ -18,6 +18,7 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 # Import modular components
 from config.settings import settings
 from services.monitoring_service import TyphoonMonitor
+from services.typhoon_service import TyphoonService
 from services.alert_monitor import AlertMonitor
 from notifications.line_bot import LineNotifier, create_webhook_handler
 from utils.helpers import get_global_data
@@ -218,6 +219,41 @@ async def get_raw_data():
         "typhoons": data['latest_typhoons'],
         "weather": data['latest_weather']
     }
+
+@app.get("/api/typhoon_timing_details")
+async def get_typhoon_timing_details():
+    """取得颱風影響時間的詳細計算資料"""
+    # This is a simplified approach for the example.
+    # In a real application, you might want to get this data from the monitoring service
+    # or trigger a new calculation.
+    typhoon_service = TyphoonService()
+    typhoon_data = await typhoon_service.get_typhoon_paths()
+    
+    if not typhoon_data or 'records' not in typhoon_data:
+        return {"error": "No typhoon data available"}
+
+    records = typhoon_data.get('records', {})
+    if 'tropicalCyclones' in records:
+        tropical_cyclones = records['tropicalCyclones']
+        typhoons = tropical_cyclones.get('tropicalCyclone', [])
+        
+        all_timing_details = []
+        for typhoon in typhoons:
+            if not isinstance(typhoon, dict):
+                continue
+            
+            cwa_typhoon_name = typhoon.get('cwaTyphoonName', '')
+            typhoon_name = cwa_typhoon_name or typhoon.get('typhoonName', '') or f"熱帶性低氣壓{typhoon.get('cwaTdNo', '')}"
+
+            threat_assessment = typhoon_service._assess_typhoon_regional_threat(typhoon, typhoon_name)
+            if threat_assessment['will_affect_taiwan']:
+                regional_timing_details = typhoon_service._calculate_regional_timing(typhoon, typhoon_name)
+                if regional_timing_details:
+                    all_timing_details.extend(regional_timing_details)
+        
+        return all_timing_details
+    
+    return {"message": "No active typhoons affecting key regions."}
 
 @app.get("/api/line/friends")
 async def get_line_friends():

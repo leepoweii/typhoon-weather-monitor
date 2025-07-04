@@ -45,6 +45,19 @@
     <div id="currentAlerts" class="alerts-container">載入中...</div>
 </section>
 
+<!-- 颱風影響時間詳細分析 -->
+<section class="typhoon-timing-details-section">
+    <h2>🕰️ 颱風影響時間詳細分析</h2>
+    <div id="timingDetailsContainer">載入中...</div>
+    <div class="estimation-note">
+        <p>
+            <strong>* 離開時間估算說明：</strong>
+            當颱風的官方預報路徑結束時，若其位置仍在影響範圍內（距離關鍵區域400公里內），系統將無法預測確切的離開時間。在這種情況下，離開時間會基於最後一個預報點加上12小時進行估算，並以星號 (*) 標記。這表示在預報期間結束後，颱風威脅依然存在。
+        </p>
+    </div>
+</section>
+
+
 <!-- 中央氣象署颱風觀測地圖 -->
 <section class="typhoon-map-section">
     <h2>🗺️ 中央氣象署颱風觀測地圖</h2>
@@ -229,12 +242,78 @@
         </ul>
         
         <div class="api-notice">
-            <p><strong>📝 重要說明：</strong></p>
-            <ul>
-                <li>機場即時監控功能因 API 限制暫時禁用。航班風險評估基於天氣預報進行。</li>
-                <li>所有分析規則可於程式碼內各分析方法查閱與調整。</li>
-                <li>資料來源：中央氣象署開放資料平臺</li>
-            </ul>
+            /* Typhoon Timing Details Section */
+    .typhoon-timing-details-section {
+        margin-top: 2rem;
+    }
+
+    .timing-card {
+        background: var(--card-bg);
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: var(--shadow);
+        margin-bottom: 1.5rem;
+        border-left: 8px solid #ffc107;
+    }
+
+    .timing-summary p {
+        margin: 0.5rem 0;
+        font-size: 1.1rem;
+    }
+
+    .details-btn {
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-top: 1rem;
+        transition: background-color 0.3s;
+    }
+
+    .details-btn:hover {
+        background-color: #0056b3;
+    }
+
+    .raw-timing-data {
+        margin-top: 1rem;
+        max-height: 300px;
+        overflow-y: auto;
+        border-top: 1px solid var(--border-color);
+        padding-top: 1rem;
+    }
+
+    .raw-timing-data table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .raw-timing-data th, .raw-timing-data td {
+        border: 1px solid var(--border-color);
+        padding: 8px;
+        text-align: left;
+    }
+
+    .raw-timing-data th {
+        background-color: #f2f2f2;
+    }
+
+    .estimation-note {
+        background-color: #fff3cd;
+        border-left: 4px solid #ffeeba;
+        padding: 1rem;
+        margin-top: 1.5rem;
+        border-radius: 4px;
+    }
+
+    .api-notice {
+        background-color: #e2e3e5;
+        border-left: 4px solid #d6d8db;
+        padding: 1rem;
+        margin-top: 1rem;
+        border-radius: 4px;
+    }
         </div>
     </div>
 </section>
@@ -984,5 +1063,144 @@
     // 每30秒更新一次
     updateData();
     setInterval(updateData, 30000);
+    updateTimingDetails();
+    setInterval(updateTimingDetails, 30000);
+
+    function toggleRawTiming(button) {
+        const content = button.nextElementSibling;
+        if (content.style.display === "none" || content.style.display === "") {
+            content.style.display = "block";
+            button.textContent = "隱藏詳細計算數據";
+        } else {
+            content.style.display = "none";
+            button.textContent = "顯示詳細計算數據";
+        }
+    }
+
+    async function updateTimingDetails() {
+        try {
+            const response = await fetch('/api/typhoon_timing_details');
+            const data = await response.json();
+            const container = document.getElementById('timingDetailsContainer');
+
+            if (data.error || data.length === 0) {
+                container.innerHTML = '<div class="no-data">✅ 目前無颱風影響關鍵區域</div>';
+                return;
+            }
+
+            let html = '';
+            data.forEach(detail => {
+                const now = new Date();
+                const approachDate = new Date(now.getTime() + detail.approach_time_hours * 3600 * 1000);
+                const departDate = new Date(now.getTime() + detail.depart_time_hours * 3600 * 1000);
+
+                html += `
+                    <div class="timing-card">
+                        <h3>${detail.typhoon_name} 對 ${detail.region_name} 的影響</h3>
+                        <div class="timing-summary">
+                            <p><strong>接近時間:</strong> ${approachDate.toLocaleString('zh-TW')} (${detail.approach_time_hours}小時後)</p>
+                            <p><strong>離開時間:</strong> ${departDate.toLocaleString('zh-TW')} (${detail.depart_time_hours}小時後) ${detail.is_depart_estimated ? '*' : ''}</p>
+                        </div>
+                        <button class="details-btn" onclick="toggleRawTiming(this)">顯示詳細計算數據</button>
+                        <div class="raw-timing-data" style="display: none;">
+                            <h4>計算數據 (距離 ${detail.region_name})</h4>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>預報時間 (小時後)</th>
+                                        <th>距離 (公里)</th>
+                                        <th>颱風座標</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${detail.raw_data.map(d => `
+                                        <tr>
+                                            <td>${d.tau}</td>
+                                            <td>${d.distance.toFixed(0)}</td>
+                                            <td>${d.coordinate[0].toFixed(2)}, ${d.coordinate[1].toFixed(2)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        } catch (error) {
+            console.error('更新颱風影響時間失敗:', error);
+            document.getElementById('timingDetailsContainer').innerHTML = '<div class="error-data">❌ 資料載入失敗</div>';
+        }
+    }
+
+    function toggleRawTiming(button) {
+        const content = button.nextElementSibling;
+        if (content.style.display === "none" || content.style.display === "") {
+            content.style.display = "block";
+            button.textContent = "隱藏詳細計算數據";
+        } else {
+            content.style.display = "none";
+            button.textContent = "顯示詳細計算數據";
+        }
+    }
+
+    async function updateTimingDetails() {
+        try {
+            const response = await fetch('/api/typhoon_timing_details');
+            const data = await response.json();
+            const container = document.getElementById('timingDetailsContainer');
+
+            if (data.error || data.length === 0) {
+                container.innerHTML = '<div class="no-data">✅ 目前無颱風影響關鍵區域</div>';
+                return;
+            }
+
+            let html = '';
+            data.forEach(detail => {
+                const now = new Date();
+                const approachDate = new Date(now.getTime() + detail.approach_time_hours * 3600 * 1000);
+                const departDate = new Date(now.getTime() + detail.depart_time_hours * 3600 * 1000);
+
+                html += `
+                    <div class="timing-card">
+                        <h3>${detail.typhoon_name} 對 ${detail.region_name} 的影響</h3>
+                        <div class="timing-summary">
+                            <p><strong>接近時間:</strong> ${approachDate.toLocaleString('zh-TW')} (${detail.approach_time_hours}小時後)</p>
+                            <p><strong>離開時間:</strong> ${departDate.toLocaleString('zh-TW')} (${detail.depart_time_hours}小時後) ${detail.is_depart_estimated ? '*' : ''}</p>
+                        </div>
+                        <button class="details-btn" onclick="toggleRawTiming(this)">顯示詳細計算數據</button>
+                        <div class="raw-timing-data" style="display: none;">
+                            <h4>計算數據 (距離 ${detail.region_name})</h4>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>預報時間 (小時後)</th>
+                                        <th>距離 (公里)</th>
+                                        <th>颱風座標</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${detail.raw_data.map(d => `
+                                        <tr>
+                                            <td>${d.tau}</td>
+                                            <td>${d.distance.toFixed(0)}</td>
+                                            <td>${d.coordinate[0].toFixed(2)}, ${d.coordinate[1].toFixed(2)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        } catch (error) {
+            console.error('更新颱風影響時間失敗:', error);
+            document.getElementById('timingDetailsContainer').innerHTML = '<div class="error-data">❌ 資料載入失敗</div>';
+        }
+    }
+</script>
 </script>
 {% endblock %}

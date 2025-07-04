@@ -75,9 +75,20 @@ typhoon-weather-monitor/
 - Notification scheduling
 
 ### notifications/flex_message_builder.py
-- Flex Message creation
-- Visual notification design
-- Status card generation
+- Modular FlexMessage builder with reusable components
+- Template system for different message types (danger, safe, info, test)
+- Automatic validation and error handling
+- Factory pattern for message creation
+
+### models/flex_message_models.py
+- Type-safe data structures for FlexMessage components
+- Dataclasses for typhoon, weather, and risk assessment data
+- Enums for consistent styling and configuration
+
+### config/flex_templates.py
+- Configuration for FlexMessage templates and themes
+- Validation rules and message limits
+- Predefined templates for common scenarios
 
 ## Development Guidelines
 
@@ -113,11 +124,11 @@ typhoon-weather-monitor/
 - Can be re-enabled once API access is obtained
 
 ### LINE Bot Integration
-- **TEXT-ONLY MESSAGING**: FlexMessage functionality is disabled due to validation complexities
-- System uses reliable text messaging only - no visual formatting
+- **FLEX MESSAGE SUPPORT**: Comprehensive FlexMessage functionality with text fallback
+- System supports rich visual notifications through modular FlexMessage components
+- Automatic fallback to text messaging if FlexMessage fails or is disabled
 - Reply tokens expire quickly; handle "Invalid reply token" errors gracefully
-- Text messages are more reliable and easier to maintain than FlexMessages
-- FlexMessageBuilder is disabled - can be restored from git history if needed
+- FlexMessageBuilder provides modular, reusable components for consistent UI
 
 ### Risk Assessment
 - Tainan risk assessment includes geographic analysis
@@ -146,6 +157,10 @@ CHECK_INTERVAL=300
 TRAVEL_DATE=2025-07-06
 CHECKUP_DATE=2025-07-07
 SERVER_PORT=8000
+
+# FlexMessage Configuration
+USE_FLEX_MESSAGES=true  # Enable FlexMessage support
+FLEX_FALLBACK_ENABLED=true  # Enable fallback to text messages
 
 # SSL Configuration
 VERIFY_SSL=false  # Set to true in production, false for development
@@ -207,6 +222,141 @@ Set logging level to DEBUG in the application for detailed logs.
 - **macOS**: Certificate issues are common due to system certificate management
 - **Development**: Use `VERIFY_SSL=false` to bypass certificate verification
 - **Production**: Ensure proper certificate chain is available and use `VERIFY_SSL=true`
+
+## FlexMessage System
+
+### Overview
+The FlexMessage system provides rich, interactive visual notifications with automatic fallback to text messaging. It uses a modular architecture for reusable components and consistent styling.
+
+### Architecture
+
+#### Core Components
+- **FlexMessageBuilder**: Main builder class with JSON handling and validation
+- **FlexMessageFactory**: Factory for creating different message types
+- **Template Classes**: DangerTemplate, SafeTemplate, InfoTemplate, TestTemplate
+- **Component Classes**: StatusCard, TyphoonInfoCard, WeatherCard, AlertCard, ActionButtonBar
+
+#### Modular Components
+```python
+# Status Card - Risk level indicators with color coding
+status_card = StatusCard(builder)
+risk_card = status_card.create_risk_card("航班風險", "高風險", "✈️")
+
+# Typhoon Info Card - Detailed typhoon information
+typhoon_card = TyphoonInfoCard(builder)
+info_card = typhoon_card.create_typhoon_card(typhoon_data)
+
+# Weather Card - Location-specific weather data
+weather_card = WeatherCard(builder)
+weather_info = weather_card.create_weather_card(weather_data)
+
+# Alert Card - Warning messages
+alert_card = AlertCard(builder)
+alerts = alert_card.create_alert_card(warnings, "🚨 緊急警告")
+```
+
+### Usage Examples
+
+#### Creating a Typhoon Status Message
+```python
+from notifications.flex_message_builder import FlexMessageFactory
+from models.flex_message_models import TyphoonData, WeatherData
+
+# Initialize factory
+factory = FlexMessageFactory()
+
+# Create message with data
+typhoon_data = TyphoonData(name="颱風凱米", wind_speed="35", pressure="980")
+weather_data = [WeatherData(location="金門縣", weather_description="多雲")]
+
+flex_message = factory.create_typhoon_status_message(
+    result=risk_assessment_result,
+    typhoon_data=typhoon_data,
+    weather_data=weather_data
+)
+
+# Convert to JSON for debugging
+json_output = factory.to_json(flex_message)
+print(json_output)
+```
+
+#### Template Selection
+The system automatically selects templates based on risk level:
+- **DangerTemplate**: For high-risk situations (status="DANGER")
+- **SafeTemplate**: For low-risk situations (status="SAFE")
+- **InfoTemplate**: For general information
+- **TestTemplate**: For system testing
+
+### Configuration
+
+#### Feature Flags
+```bash
+# Enable/disable FlexMessage functionality
+USE_FLEX_MESSAGES=true
+
+# Enable automatic fallback to text messages
+FLEX_FALLBACK_ENABLED=true
+```
+
+#### Template Configuration
+Templates can be customized through `config/flex_templates.py`:
+- **Colors**: Risk level color coding
+- **Icons**: Weather condition icons
+- **Layouts**: Spacing and typography settings
+- **Themes**: Different visual themes for various scenarios
+
+### LINE Bot Integration
+
+#### Automatic Fallback
+The LINE Bot service automatically handles FlexMessage failures:
+1. Attempts to send FlexMessage if enabled
+2. Falls back to text message if FlexMessage fails
+3. Logs appropriate error messages for debugging
+
+#### Usage in LINE Bot
+```python
+# The LINE Bot automatically uses FlexMessages
+await line_notifier.push_typhoon_status(result)
+await line_notifier.reply_typhoon_status(reply_token, result)
+await line_notifier.send_test_notification()
+```
+
+### Validation and Error Handling
+
+#### Built-in Validation
+- Text length limits (2000 characters for content, 400 for alt text)
+- Component count limits (12 components per box)
+- Button count limits (4 buttons per row)
+- Carousel size limits (12 bubbles maximum)
+
+#### Error Handling
+- Graceful degradation to text messages
+- Comprehensive logging for debugging
+- Validation before sending to LINE API
+
+### Troubleshooting FlexMessages
+
+#### Common Issues
+1. **Validation Errors**: Check component structure and limits
+2. **JSON Serialization**: Ensure proper data types
+3. **LINE API Errors**: Verify FlexMessage format compliance
+4. **Fallback Triggered**: Check logs for specific error details
+
+#### Debug Mode
+Enable detailed logging for FlexMessage debugging:
+```python
+import logging
+logging.getLogger('notifications.flex_message_builder').setLevel(logging.DEBUG)
+```
+
+#### Testing FlexMessages
+Use the test message functionality to verify FlexMessage operation:
+```python
+# Create and validate test message
+test_message = factory.create_test_message()
+is_valid = factory.validate_message(test_message)
+print(f"Message valid: {is_valid}")
+```
 
 ## Contributing
 
