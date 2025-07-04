@@ -6,6 +6,7 @@
 import asyncio
 import httpx
 import json
+import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from contextlib import asynccontextmanager
@@ -82,647 +83,6 @@ latest_airport_update_time = None
 airport_api_status = "未知"  # "正常", "異常", "未知"
 last_notification_status = "SAFE"  # 追蹤上次通知的狀態
 line_user_ids = []  # 儲存所有好友的USER ID
-
-class LineNotifier:
-    def __init__(self):
-        self.api_client = ApiClient(configuration)
-        self.line_bot_api = MessagingApi(self.api_client)
-        # 初始化 FlexMessageBuilder，使用 Zeabur 或本地 URL
-        self.flex_builder = FlexMessageBuilder(
-            base_url=os.getenv("APP_URL", f"http://localhost:{SERVER_PORT}")
-        )
-    
-    def format_typhoon_status(self, result: Dict) -> str:
-        """格式化颱風狀態訊息（保留文字版本作為備用）"""
-        timestamp = datetime.fromisoformat(result["timestamp"].replace('Z', '+00:00'))
-        status_icon = "🔴" if result["status"] == "DANGER" else "🟢"
-        status_text = "有風險" if result["status"] == "DANGER" else "無明顯風險"
-        
-        message = f"🚨 颱風警報 - {timestamp.strftime('%Y-%m-%d %H:%M')}\n"
-        message += f"---------------------------\n"
-        message += f"{status_icon} 警告狀態: {status_text}\n\n"
-        message += f"✈️ 7/6 金門→台南航班風險: {result['travel_risk']}\n"
-        message += f"🏥 7/7 台南體檢風險: {result['checkup_risk']}\n\n"
-        
-        if result["warnings"]:
-            # 分類警告訊息
-            flight_warnings = [w for w in result["warnings"] if any(keyword in w for keyword in ['起飛', '抵達', '航班', '停飛', '延誤', '機場API'])]
-            weather_warnings = [w for w in result["warnings"] if w not in flight_warnings]
-            
-            if flight_warnings:
-                message += "✈️ 金門機場即時狀況:\n"
-                for warning in flight_warnings:
-                    message += f"• {warning}\n"
-                message += "\n"
-            
-            if weather_warnings:
-                message += "🌪️ 天氣警報:\n"
-                for warning in weather_warnings:
-                    message += f"• {warning}\n"
-        else:
-            message += "✅ 目前無特殊警報\n"
-        
-        return message.strip()
-    
-    async def push_typhoon_status_flex(self, result: Dict):
-        """推送颱風狀態 Flex Message 給所有好友"""
-        if not line_user_ids:
-            logger.warning("沒有LINE好友ID，無法發送推送訊息")
-            return
-        
-        try:
-            flex_container = self.flex_builder.create_typhoon_status_flex(result)
-            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container)
-            
-            for user_id in line_user_ids:
-                push_message = PushMessageRequest(
-                    to=user_id,
-                    messages=[flex_message]
-                )
-                self.line_bot_api.push_message(push_message)
-            logger.info(f"成功推送 Flex Message 給 {len(line_user_ids)} 位好友")
-        except Exception as e:
-            logger.error(f"LINE Flex 推送失敗，嘗試文字版本: {e}")
-            # 失敗時回退到文字訊息
-            text_message = self.format_typhoon_status(result)
-            await self.push_to_all_friends(text_message)
-    
-    async def push_airport_status_flex(self, airport_data: Dict):
-        """推送機場狀態 Flex Message 給所有好友"""
-        if not line_user_ids:
-            logger.warning("沒有LINE好友ID，無法發送推送訊息")
-            return
-        
-        try:
-            flex_container = self.flex_builder.create_airport_status_flex(airport_data)
-            flex_message = FlexMessage(alt_text="金門機場即時狀況", contents=flex_container)
-            
-            for user_id in line_user_ids:
-                push_message = PushMessageRequest(
-                    to=user_id,
-                    messages=[flex_message]
-                )
-                self.line_bot_api.push_message(push_message)
-            logger.info(f"成功推送機場 Flex Message 給 {len(line_user_ids)} 位好友")
-        except Exception as e:
-            logger.error(f"LINE 機場 Flex 推送失敗: {e}")
-    
-    async def push_to_all_friends(self, message: str):
-        """推送文字訊息給所有好友（備用方法）"""
-        if not line_user_ids:
-            logger.warning("沒有LINE好友ID，無法發送推送訊息")
-            return
-        
-        try:
-            for user_id in line_user_ids:
-                push_message = PushMessageRequest(
-                    to=user_id,
-                    messages=[TextMessage(text=message)]
-                )
-                self.line_bot_api.push_message(push_message)
-            logger.info(f"成功推送文字訊息給 {len(line_user_ids)} 位好友")
-        except Exception as e:
-            logger.error(f"LINE推送失敗: {e}")
-    
-    async def reply_typhoon_status_flex(self, reply_token: str, result: Dict):
-        """回覆颱風狀態 Flex Message"""
-        try:
-            flex_container = self.flex_builder.create_typhoon_status_flex(result)
-            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container)
-            
-            reply_message = ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[flex_message]
-            )
-            self.line_bot_api.reply_message(reply_message)
-            logger.info("成功回覆 Flex Message")
-        except Exception as e:
-            logger.error(f"LINE Flex 回覆失敗，嘗試文字版本: {e}")
-            # 失敗時回退到文字訊息
-            text_message = self.format_typhoon_status(result)
-            await self.reply_message(reply_token, text_message)
-    
-    async def reply_message(self, reply_token: str, message: str):
-        """回覆文字訊息（備用方法）"""
-        try:
-            reply_message = ReplyMessageRequest(
-                reply_token=reply_token,
-                messages=[TextMessage(text=message)]
-            )
-            self.line_bot_api.reply_message(reply_message)
-            logger.info("成功回覆LINE訊息")
-        except Exception as e:
-            logger.error(f"LINE回覆失敗: {e}")
-    
-    async def send_test_notification_flex(self):
-        """發送測試 Flex Message"""
-        if not line_user_ids:
-            logger.warning("沒有LINE好友ID，無法發送測試訊息")
-            return
-        
-        try:
-            flex_container = self.flex_builder.create_test_notification_flex("🧪 LINE Bot Flex Message 測試成功！")
-            flex_message = FlexMessage(alt_text="系統測試通知", contents=flex_container)
-            
-            for user_id in line_user_ids:
-                push_message = PushMessageRequest(
-                    to=user_id,
-                    messages=[flex_message]
-                )
-                self.line_bot_api.push_message(push_message)
-            logger.info(f"成功發送測試 Flex Message 給 {len(line_user_ids)} 位好友")
-        except Exception as e:
-            logger.error(f"測試 Flex Message 發送失敗: {e}")
-
-# 初始化LINE通知器
-line_notifier = LineNotifier()
-
-class AirportMonitor:
-    """金門機場起降資訊監控器"""
-    
-    def __init__(self):
-        # 設定SSL驗證為False以解決macOS的SSL問題
-        self.client = httpx.AsyncClient(timeout=30.0, verify=False)
-        self.base_url = "https://tdx.transportdata.tw/api/basic/v2/Air/FIDS/Airport"
-        
-    async def get_departure_info(self) -> Dict:
-        """取得金門機場起飛航班資訊"""
-        try:
-            url = f"{self.base_url}/Departure/KNH?$format=JSON"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            }
-            response = await self.client.get(url, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            
-            # 更新全域狀態
-            global latest_airport_departure, latest_airport_update_time, airport_api_status
-            latest_airport_departure = data
-            latest_airport_update_time = datetime.now()
-            airport_api_status = "正常"
-            
-            logger.info(f"成功取得金門機場起飛資訊，共 {len(data) if isinstance(data, list) else 0} 筆航班")
-            return data
-        except Exception as e:
-            logger.warning(f"取得金門機場起飛資訊失敗: {e}")
-            global airport_api_status
-            airport_api_status = "異常"
-            return latest_airport_departure  # 返回最後一次成功的資料
-    
-    async def get_arrival_info(self) -> Dict:
-        """取得金門機場抵達航班資訊"""
-        try:
-            url = f"{self.base_url}/Arrival/KNH?$format=JSON"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-            }
-            response = await self.client.get(url, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            
-            # 更新全域狀態
-            global latest_airport_arrival, latest_airport_update_time, airport_api_status
-            latest_airport_arrival = data
-            latest_airport_update_time = datetime.now()
-            airport_api_status = "正常"
-            
-            logger.info(f"成功取得金門機場抵達資訊，共 {len(data) if isinstance(data, list) else 0} 筆航班")
-            return data
-        except Exception as e:
-            logger.warning(f"取得金門機場抵達資訊失敗: {e}")
-            global airport_api_status
-            airport_api_status = "異常"
-            return latest_airport_arrival  # 返回最後一次成功的資料
-            return {}
-    
-    def analyze_flight_status(self, departure_data: Dict, arrival_data: Dict) -> List[str]:
-        """分析航班狀態，檢查停飛或延誤情況"""
-        warnings = []
-        
-        # 檢查 API 狀態並添加相應的警告
-        global airport_api_status, latest_airport_update_time
-        if airport_api_status == "異常":
-            if latest_airport_update_time:
-                last_update = latest_airport_update_time.strftime('%Y-%m-%d %H:%M')
-                warnings.append(f"⚠️ 機場API連線異常，使用最後更新資料 ({last_update})")
-            else:
-                warnings.append(f"⚠️ 機場API連線異常，無法取得航班資料")
-                return warnings
-        elif airport_api_status == "正常" and latest_airport_update_time:
-            # 如果資料超過10分鐘沒更新，也提醒
-            time_diff = (datetime.now() - latest_airport_update_time).total_seconds() / 60
-            if time_diff > 10:
-                warnings.append(f"📅 機場資料已 {int(time_diff)} 分鐘未更新")
-        
-        # 目的地機場代碼對應
-        airport_names = {
-            'TSA': '松山',
-            'TPE': '桃園', 
-            'KHH': '高雄',
-            'TNN': '台南',
-            'CYI': '嘉義',
-            'RMQ': '馬公',
-            'KNH': '金門'
-        }
-        
-        # 分析起飛航班
-        if departure_data and isinstance(departure_data, list):
-            for flight in departure_data:
-                try:
-                    airline_id = flight.get('AirlineID', '')
-                    flight_number = flight.get('FlightNumber', '')
-                    destination_code = flight.get('ArrivalAirportID', '')
-                    destination = airport_names.get(destination_code, destination_code)
-                    schedule_time = flight.get('ScheduleDepartureTime', '')
-                    actual_time = flight.get('ActualDepartureTime', '')
-                    estimated_time = flight.get('EstimatedDepartureTime', '')
-                    remark = flight.get('DepartureRemark', '')
-                    gate = flight.get('Gate', '')
-                    
-                    # 檢查停飛或取消狀況
-                    if remark and any(keyword in remark for keyword in ['取消', '停飛', 'CANCELLED', '暫停']):
-                        warnings.append(f"✈️ 起飛停飛: {airline_id}{flight_number} → {destination} ({schedule_time[:16]}) - {remark}")
-                    
-                    # 檢查延誤狀況（實際時間與排定時間差異）
-                    elif actual_time and schedule_time:
-                        try:
-                            from datetime import datetime
-                            schedule_dt = datetime.fromisoformat(schedule_time)
-                            actual_dt = datetime.fromisoformat(actual_time)
-                            delay_minutes = (actual_dt - schedule_dt).total_seconds() / 60
-                            
-                            # 延誤超過30分鐘才警告
-                            if delay_minutes >= 30:
-                                warnings.append(f"⏰ 起飛延誤: {airline_id}{flight_number} → {destination} 延誤 {int(delay_minutes)} 分鐘")
-                        except:
-                            pass
-                    
-                    # 檢查預計時間延誤
-                    elif estimated_time and schedule_time and not actual_time:
-                        try:
-                            from datetime import datetime
-                            schedule_dt = datetime.fromisoformat(schedule_time)
-                            estimated_dt = datetime.fromisoformat(estimated_time)
-                            delay_minutes = (estimated_dt - schedule_dt).total_seconds() / 60
-                            
-                            if delay_minutes >= 30:
-                                warnings.append(f"⏰ 起飛預計延誤: {airline_id}{flight_number} → {destination} 預計延誤 {int(delay_minutes)} 分鐘")
-                        except:
-                            pass
-                    
-                    # 檢查特殊狀態備註
-                    if remark and any(keyword in remark for keyword in ['延誤', '異常', '等待', '暫緩']):
-                        warnings.append(f"📝 起飛狀況: {airline_id}{flight_number} → {destination} - {remark}")
-                
-                except Exception as e:
-                    logger.error(f"分析起飛航班失敗: {e}")
-        
-        # 分析抵達航班
-        if arrival_data and isinstance(arrival_data, list):
-            for flight in arrival_data:
-                try:
-                    airline_id = flight.get('AirlineID', '')
-                    flight_number = flight.get('FlightNumber', '')
-                    origin_code = flight.get('DepartureAirportID', '')
-                    origin = airport_names.get(origin_code, origin_code)
-                    schedule_time = flight.get('ScheduleArrivalTime', '')
-                    actual_time = flight.get('ActualArrivalTime', '')
-                    estimated_time = flight.get('EstimatedArrivalTime', '')
-                    remark = flight.get('ArrivalRemark', '')
-                    gate = flight.get('Gate', '')
-                    
-                    # 檢查停飛或取消狀況
-                    if remark and any(keyword in remark for keyword in ['取消', '停飛', 'CANCELLED', '暫停']):
-                        warnings.append(f"🛬 抵達停飛: {airline_id}{flight_number} ← {origin} ({schedule_time[:16]}) - {remark}")
-                    
-                    # 檢查延誤狀況（實際時間與排定時間差異）
-                    elif actual_time and schedule_time:
-                        try:
-                            from datetime import datetime
-                            schedule_dt = datetime.fromisoformat(schedule_time)
-                            actual_dt = datetime.fromisoformat(actual_time)
-                            delay_minutes = (actual_dt - schedule_dt).total_seconds() / 60
-                            
-                            # 延誤超過30分鐘才警告
-                            if delay_minutes >= 30:
-                                warnings.append(f"⏰ 抵達延誤: {airline_id}{flight_number} ← {origin} 延誤 {int(delay_minutes)} 分鐘")
-                        except:
-                            pass
-                    
-                    # 檢查預計時間延誤
-                    elif estimated_time and schedule_time and not actual_time:
-                        try:
-                            from datetime import datetime
-                            schedule_dt = datetime.fromisoformat(schedule_time)
-                            estimated_dt = datetime.fromisoformat(estimated_time)
-                            delay_minutes = (estimated_dt - schedule_dt).total_seconds() / 60
-                            
-                            if delay_minutes >= 30:
-                                warnings.append(f"⏰ 抵達預計延誤: {airline_id}{flight_number} ← {origin} 預計延誤 {int(delay_minutes)} 分鐘")
-                        except:
-                            pass
-                    
-                    # 檢查特殊狀態備註
-                    if remark and any(keyword in remark for keyword in ['延誤', '異常', '等待', '暫緩']):
-                        warnings.append(f"📝 抵達狀況: {airline_id}{flight_number} ← {origin} - {remark}")
-                
-                except Exception as e:
-                    logger.error(f"分析抵達航班失敗: {e}")
-        
-        return warnings
-    
-    async def check_flight_conditions(self) -> List[str]:
-        """檢查金門機場航班狀況"""
-        logger.info("開始檢查金門機場航班狀況...")
-        
-        # 並行取得起降資料
-        departure_task = self.get_departure_info()
-        arrival_task = self.get_arrival_info()
-        
-        departure_data, arrival_data = await asyncio.gather(
-            departure_task, arrival_task, return_exceptions=True
-        )
-        
-        # 處理異常情況
-        if isinstance(departure_data, Exception):
-            logger.error(f"取得起飛資料失敗: {departure_data}")
-            departure_data = {}
-        
-        if isinstance(arrival_data, Exception):
-            logger.error(f"取得抵達資料失敗: {arrival_data}")
-            arrival_data = {}
-        
-        # 分析航班狀態
-        flight_warnings = self.analyze_flight_status(departure_data, arrival_data)
-        
-        return flight_warnings
-
-class TyphoonMonitor:
-    def __init__(self):
-        # 設定SSL驗證為False以解決macOS的SSL問題
-        self.client = httpx.AsyncClient(timeout=30.0, verify=False)
-        
-    async def get_weather_alerts(self) -> Dict:
-        """取得天氣特報資訊"""
-        try:
-            url = f"{CWA_BASE_URL}/v1/rest/datastore/W-C0033-001"
-            params = {
-                "Authorization": API_KEY,
-                "format": "JSON",
-                "locationName": ",".join(MONITOR_LOCATIONS)
-            }
-            
-            response = await self.client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"取得天氣特報失敗: {e}")
-            return {}
-    
-    async def get_typhoon_paths(self) -> Dict:
-        """取得颱風路徑資訊"""
-        try:
-            url = f"{CWA_BASE_URL}/v1/rest/datastore/W-C0034-005"
-            params = {
-                "Authorization": API_KEY,
-                "format": "JSON"
-            }
-            
-            response = await self.client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"取得颱風路徑失敗: {e}")
-            return {}
-    
-    async def get_weather_forecast(self) -> Dict:
-        """取得36小時天氣預報"""
-        try:
-            url = f"{CWA_BASE_URL}/v1/rest/datastore/F-C0032-001"
-            params = {
-                "Authorization": API_KEY,
-                "format": "JSON",
-                "locationName": ",".join(MONITOR_LOCATIONS)
-            }
-            
-            response = await self.client.get(url, params=params)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"取得天氣預報失敗: {e}")
-            return {}
-    
-    def analyze_alerts(self, alerts_data: Dict) -> List[str]:
-        """分析警報資料"""
-        warnings = []
-        
-        if not alerts_data or 'records' not in alerts_data:
-            return warnings
-        
-        try:
-            for record in alerts_data.get('records', {}).get('location', []):
-                location_name = record.get('locationName', '')
-                if location_name in MONITOR_LOCATIONS:
-                    hazards = record.get('hazardConditions', {}).get('hazards', [])
-                    for hazard in hazards:
-                        phenomena = hazard.get('phenomena', '')
-                        significance = hazard.get('significance', '')
-                        if '颱風' in phenomena or '強風' in phenomena:
-                            warnings.append(f"⚠️ {location_name}: {phenomena} {significance}")
-        except Exception as e:
-            logger.error(f"分析警報資料失敗: {e}")
-        
-        return warnings
-    
-    def analyze_typhoons(self, typhoon_data: Dict) -> List[str]:
-        """分析颱風路徑資料"""
-        warnings = []
-        
-        if not typhoon_data or 'records' not in typhoon_data:
-            return warnings
-        
-        try:
-            for typhoon in typhoon_data.get('records', {}).get('typhoon', []):
-                name = typhoon.get('typhoonName', '未知颱風')
-                intensity = typhoon.get('intensity', {})
-                max_wind = intensity.get('maximumWind', {}).get('value', 0)
-                
-                # 如果最大風速超過一定值，發出警告
-                # 金門機場側風停飛標準：25節(46.3 km/h)，暴風圈標準：34節(63 km/h)
-                if max_wind > 60:  # km/h - 調整為更實際的航班風險閾值
-                    if max_wind > 80:
-                        warnings.append(f"🌀 {name}颱風 最大風速: {max_wind} km/h (航班高風險)")
-                    else:
-                        warnings.append(f"🌀 {name}颱風 最大風速: {max_wind} km/h (航班可能影響)")
-                    
-                    # 檢查預報路徑是否影響目標區域
-                    forecasts = typhoon.get('forecast', [])
-                    for forecast in forecasts:
-                        location = forecast.get('location', {})
-                        lat = location.get('lat', 0)
-                        lon = location.get('lon', 0)
-                        
-                        # 簡單的地理區域判斷（台灣範圍）
-                        if 22 <= lat <= 25.5 and 119 <= lon <= 122:
-                            forecast_time = forecast.get('time', '')
-                            warnings.append(f"📍 {name}颱風預報將於 {forecast_time} 接近台灣")
-                            break
-        except Exception as e:
-            logger.error(f"分析颱風資料失敗: {e}")
-        
-        return warnings
-    
-    def analyze_weather(self, weather_data: Dict) -> List[str]:
-        """分析天氣預報資料"""
-        warnings = []
-        
-        if not weather_data or 'records' not in weather_data:
-            return warnings
-        
-        try:
-            for location in weather_data.get('records', {}).get('location', []):
-                location_name = location.get('locationName', '')
-                if location_name in MONITOR_LOCATIONS:
-                    elements = location.get('weatherElement', [])
-                    for element in elements:
-                        element_name = element.get('elementName', '')
-                        if element_name == 'Wx':  # 天氣現象
-                            times = element.get('time', [])
-                            for time_data in times:
-                                start_time = time_data.get('startTime', '')
-                                weather_desc = time_data.get('parameter', {}).get('parameterName', '')
-                                
-                                # 檢查是否有惡劣天氣
-                                if any(keyword in weather_desc for keyword in ['颱風', '暴風', '豪雨', '大雨']):
-                                    warnings.append(f"🌧️ {location_name} {start_time}: {weather_desc}")
-        except Exception as e:
-            logger.error(f"分析天氣資料失敗: {e}")
-        
-        return warnings
-    
-    async def check_all_conditions(self) -> Dict:
-        """檢查所有條件"""
-        logger.info("開始檢查天氣條件...")
-        
-        # 並行取得所有資料
-        alerts_task = self.get_weather_alerts()
-        typhoons_task = self.get_typhoon_paths()
-        weather_task = self.get_weather_forecast()
-        departure_task = airport_monitor.get_departure_info()
-        arrival_task = airport_monitor.get_arrival_info()
-        
-        alerts_data, typhoons_data, weather_data, departure_data, arrival_data = await asyncio.gather(
-            alerts_task, typhoons_task, weather_task, departure_task, arrival_task, return_exceptions=True
-        )
-        
-        # 更新全域狀態
-        global latest_alerts, latest_typhoons, latest_weather, latest_airport_departure, latest_airport_arrival, last_notification_status
-        latest_alerts = alerts_data if not isinstance(alerts_data, Exception) else {}
-        latest_typhoons = typhoons_data if not isinstance(typhoons_data, Exception) else {}
-        latest_weather = weather_data if not isinstance(weather_data, Exception) else {}
-        latest_airport_departure = departure_data if not isinstance(departure_data, Exception) else {}
-        latest_airport_arrival = arrival_data if not isinstance(arrival_data, Exception) else {}
-        
-        # 分析機場資料
-        flight_warnings = airport_monitor.analyze_flight_status(latest_airport_departure, latest_airport_arrival)
-        
-        # 分析所有資料
-        alert_warnings = self.analyze_alerts(latest_alerts)
-        typhoon_warnings = self.analyze_typhoons(latest_typhoons)
-        weather_warnings = self.analyze_weather(latest_weather)
-        
-        all_warnings = alert_warnings + typhoon_warnings + weather_warnings + flight_warnings
-        
-        result = {
-            "timestamp": datetime.now().isoformat(),
-            "warnings": all_warnings,
-            "status": "DANGER" if all_warnings else "SAFE",
-            "travel_risk": self.assess_travel_risk(all_warnings),
-            "checkup_risk": self.assess_checkup_risk(all_warnings)
-        }
-        
-        # 輸出警報到控制台
-        self.print_alerts(result)
-        
-        # 檢查是否需要發送LINE通知
-        await self.check_and_send_line_notification(result)
-        
-        return result
-    
-    async def check_and_send_line_notification(self, result: Dict):
-        """檢查並發送LINE通知"""
-        global last_notification_status
-        current_status = result["status"]
-        
-        # 只在狀態變化且變為DANGER時發送通知
-        if current_status == "DANGER" and last_notification_status != "DANGER":
-            await line_notifier.push_typhoon_status_flex(result)
-            logger.info("已發送LINE風險 Flex Message 通知")
-        
-        # 更新上次通知狀態
-        last_notification_status = current_status
-    
-    def assess_travel_risk(self, warnings: List[str]) -> str:
-        """評估7/6航班風險"""
-        if not warnings:
-            return "低風險"
-        
-        typhoon_warnings = [w for w in warnings if '颱風' in w]
-        wind_warnings = [w for w in warnings if '強風' in w or '暴風' in w]
-        flight_warnings = [w for w in warnings if '停飛' in w or '取消' in w]
-        delay_warnings = [w for w in warnings if '延誤' in w]
-        
-        # 實際航班已有停飛或取消，風險最高
-        if flight_warnings:
-            return "高風險 - 航班已停飛/取消"
-        elif typhoon_warnings:
-            return "高風險 - 建議考慮改期"
-        elif delay_warnings:
-            return "中風險 - 航班可能延誤"
-        elif wind_warnings:
-            return "中風險 - 密切關注"
-        else:
-            return "中風險 - 持續監控"
-    
-    def assess_checkup_risk(self, warnings: List[str]) -> str:
-        """評估7/7體檢風險"""
-        if not warnings:
-            return "低風險"
-        
-        for warning in warnings:
-            if '台南' in warning or '臺南' in warning:
-                if '颱風' in warning:
-                    return "高風險 - 可能停班停課"
-                elif '強風' in warning or '豪雨' in warning:
-                    return "中風險 - 可能影響交通"
-        
-        return "低風險"
-    
-    def print_alerts(self, result: Dict):
-        """在控制台輸出警報"""
-        print("\n" + "="*60)
-        print(f"🚨 颱風警訊播報系統 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("="*60)
-        
-        status = result["status"]
-        if status == "DANGER":
-            print("🔴 警告狀態: 有風險")
-        else:
-            print("🟢 安全狀態: 無明顯風險")
-        
-        print(f"\n✈️ 7/6 金門→台南航班風險: {result['travel_risk']}")
-        print(f"🏥 7/7 台南體檢風險: {result['checkup_risk']}")
-        
-        warnings = result["warnings"]
-        if warnings:
-            print("\n📢 目前警報:")
-            for warning in warnings:
-                print(f"  {warning}")
-        else:
-            print("\n✅ 目前無特殊警報")
-        
-        print("="*60)
 
 class FlexMessageBuilder:
     """LINE Flex Message 建構器類別，用於創建各種視覺化通知訊息"""
@@ -1216,6 +576,642 @@ class FlexMessageBuilder:
         }
         
         return FlexContainer.from_dict(flex_content)
+
+class LineNotifier:
+    def __init__(self):
+        self.api_client = ApiClient(configuration)
+        self.line_bot_api = MessagingApi(self.api_client)
+        # 初始化 FlexMessageBuilder，使用 Zeabur 或本地 URL
+        self.flex_builder = FlexMessageBuilder(
+            base_url=os.getenv("APP_URL", f"http://localhost:{SERVER_PORT}")
+        )
+    
+    def format_typhoon_status(self, result: Dict) -> str:
+        """格式化颱風狀態訊息（保留文字版本作為備用）"""
+        timestamp = datetime.fromisoformat(result["timestamp"].replace('Z', '+00:00'))
+        status_icon = "🔴" if result["status"] == "DANGER" else "🟢"
+        status_text = "有風險" if result["status"] == "DANGER" else "無明顯風險"
+        
+        message = f"🚨 颱風警報 - {timestamp.strftime('%Y-%m-%d %H:%M')}\n"
+        message += f"---------------------------\n"
+        message += f"{status_icon} 警告狀態: {status_text}\n\n"
+        message += f"✈️ 7/6 金門→台南航班風險: {result['travel_risk']}\n"
+        message += f"🏥 7/7 台南體檢風險: {result['checkup_risk']}\n\n"
+        
+        if result["warnings"]:
+            # 分類警告訊息
+            flight_warnings = [w for w in result["warnings"] if any(keyword in w for keyword in ['起飛', '抵達', '航班', '停飛', '延誤', '機場API'])]
+            weather_warnings = [w for w in result["warnings"] if w not in flight_warnings]
+            
+            if flight_warnings:
+                message += "✈️ 金門機場即時狀況:\n"
+                for warning in flight_warnings:
+                    message += f"• {warning}\n"
+                message += "\n"
+            
+            if weather_warnings:
+                message += "🌪️ 天氣警報:\n"
+                for warning in weather_warnings:
+                    message += f"• {warning}\n"
+        else:
+            message += "✅ 目前無特殊警報\n"
+        
+        return message.strip()
+    
+    async def push_typhoon_status_flex(self, result: Dict):
+        """推送颱風狀態 Flex Message 給所有好友"""
+        if not line_user_ids:
+            logger.warning("沒有LINE好友ID，無法發送推送訊息")
+            return
+        
+        try:
+            flex_container = self.flex_builder.create_typhoon_status_flex(result)
+            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container)
+            
+            for user_id in line_user_ids:
+                push_message = PushMessageRequest(
+                    to=user_id,
+                    messages=[flex_message]
+                )
+                self.line_bot_api.push_message(push_message)
+            logger.info(f"成功推送 Flex Message 給 {len(line_user_ids)} 位好友")
+        except Exception as e:
+            logger.error(f"LINE Flex 推送失敗，嘗試文字版本: {e}")
+            # 失敗時回退到文字訊息
+            text_message = self.format_typhoon_status(result)
+            await self.push_to_all_friends(text_message)
+    
+    async def push_airport_status_flex(self, airport_data: Dict):
+        """推送機場狀態 Flex Message 給所有好友"""
+        if not line_user_ids:
+            logger.warning("沒有LINE好友ID，無法發送推送訊息")
+            return
+        
+        try:
+            flex_container = self.flex_builder.create_airport_status_flex(airport_data)
+            flex_message = FlexMessage(alt_text="金門機場即時狀況", contents=flex_container)
+            
+            for user_id in line_user_ids:
+                push_message = PushMessageRequest(
+                    to=user_id,
+                    messages=[flex_message]
+                )
+                self.line_bot_api.push_message(push_message)
+            logger.info(f"成功推送機場 Flex Message 給 {len(line_user_ids)} 位好友")
+        except Exception as e:
+            logger.error(f"LINE 機場 Flex 推送失敗: {e}")
+    
+    async def push_to_all_friends(self, message: str):
+        """推送文字訊息給所有好友（備用方法）"""
+        if not line_user_ids:
+            logger.warning("沒有LINE好友ID，無法發送推送訊息")
+            return
+        
+        try:
+            for user_id in line_user_ids:
+                push_message = PushMessageRequest(
+                    to=user_id,
+                    messages=[TextMessage(text=message)]
+                )
+                self.line_bot_api.push_message(push_message)
+            logger.info(f"成功推送文字訊息給 {len(line_user_ids)} 位好友")
+        except Exception as e:
+            logger.error(f"LINE推送失敗: {e}")
+    
+    async def reply_typhoon_status_flex(self, reply_token: str, result: Dict):
+        """回覆颱風狀態 Flex Message"""
+        try:
+            flex_container = self.flex_builder.create_typhoon_status_flex(result)
+            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container)
+            
+            reply_message = ReplyMessageRequest(
+                reply_token=reply_token,
+                messages=[flex_message]
+            )
+            self.line_bot_api.reply_message(reply_message)
+            logger.info("成功回覆 Flex Message")
+        except Exception as e:
+            logger.error(f"LINE Flex 回覆失敗，嘗試文字版本: {e}")
+            # 失敗時回退到文字訊息
+            text_message = self.format_typhoon_status(result)
+            await self.reply_message(reply_token, text_message)
+    
+    async def reply_message(self, reply_token: str, message: str):
+        """回覆文字訊息（備用方法）"""
+        try:
+            reply_message = ReplyMessageRequest(
+                reply_token=reply_token,
+                messages=[TextMessage(text=message)]
+            )
+            self.line_bot_api.reply_message(reply_message)
+            logger.info("成功回覆LINE訊息")
+        except Exception as e:
+            logger.error(f"LINE回覆失敗: {e}")
+    
+    async def send_test_notification_flex(self):
+        """發送測試 Flex Message"""
+        if not line_user_ids:
+            logger.warning("沒有LINE好友ID，無法發送測試訊息")
+            return
+        
+        try:
+            flex_container = self.flex_builder.create_test_notification_flex("🧪 LINE Bot Flex Message 測試成功！")
+            flex_message = FlexMessage(alt_text="系統測試通知", contents=flex_container)
+            
+            for user_id in line_user_ids:
+                push_message = PushMessageRequest(
+                    to=user_id,
+                    messages=[flex_message]
+                )
+                self.line_bot_api.push_message(push_message)
+            logger.info(f"成功發送測試 Flex Message 給 {len(line_user_ids)} 位好友")
+        except Exception as e:
+            logger.error(f"測試 Flex Message 發送失敗: {e}")
+
+# 初始化LINE通知器
+line_notifier = LineNotifier()
+
+class AirportMonitor:
+    """金門機場起降資訊監控器"""
+    
+    def __init__(self):
+        # 設定SSL驗證為False以解決macOS的SSL問題
+        self.client = httpx.AsyncClient(timeout=30.0, verify=False)
+        self.base_url = "https://tdx.transportdata.tw/api/basic/v2/Air/FIDS/Airport"
+        
+    async def get_departure_info(self) -> Dict:
+        """取得金門機場起飛航班資訊"""
+        try:
+            url = f"{self.base_url}/Departure/KNH?$format=JSON"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            }
+            response = await self.client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            # 更新全域狀態
+            global latest_airport_departure, latest_airport_update_time, airport_api_status
+            latest_airport_departure = data
+            latest_airport_update_time = datetime.now()
+            airport_api_status = "正常"
+            
+            logger.info(f"成功取得金門機場起飛資訊，共 {len(data) if isinstance(data, list) else 0} 筆航班")
+            return data
+        except Exception as e:
+            logger.warning(f"取得金門機場起飛資訊失敗: {e}")
+            airport_api_status = "異常"
+            return latest_airport_departure  # 返回最後一次成功的資料
+    
+    async def get_arrival_info(self) -> Dict:
+        """取得金門機場抵達航班資訊"""
+        try:
+            url = f"{self.base_url}/Arrival/KNH?$format=JSON"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            }
+            response = await self.client.get(url, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            # 更新全域狀態
+            global latest_airport_arrival, latest_airport_update_time, airport_api_status
+            latest_airport_arrival = data
+            latest_airport_update_time = datetime.now()
+            airport_api_status = "正常"
+            
+            logger.info(f"成功取得金門機場抵達資訊，共 {len(data) if isinstance(data, list) else 0} 筆航班")
+            return data
+        except Exception as e:
+            logger.warning(f"取得金門機場抵達資訊失敗: {e}")
+            airport_api_status = "異常"
+            return latest_airport_arrival  # 返回最後一次成功的資料
+    
+    def analyze_flight_status(self, departure_data: Dict, arrival_data: Dict) -> List[str]:
+        """分析航班狀態，檢查停飛或延誤情況"""
+        warnings = []
+        
+        # 檢查 API 狀態並添加相應的警告
+        global airport_api_status, latest_airport_update_time
+        if airport_api_status == "異常":
+            if latest_airport_update_time:
+                last_update = latest_airport_update_time.strftime('%Y-%m-%d %H:%M')
+                warnings.append(f"⚠️ 機場API連線異常，使用最後更新資料 ({last_update})")
+            else:
+                warnings.append(f"⚠️ 機場API連線異常，無法取得航班資料")
+                return warnings
+        elif airport_api_status == "正常" and latest_airport_update_time:
+            # 如果資料超過10分鐘沒更新，也提醒
+            time_diff = (datetime.now() - latest_airport_update_time).total_seconds() / 60
+            if time_diff > 10:
+                warnings.append(f"📅 機場資料已 {int(time_diff)} 分鐘未更新")
+        
+        # 目的地機場代碼對應
+        airport_names = {
+            'TSA': '松山',
+            'TPE': '桃園', 
+            'KHH': '高雄',
+            'TNN': '台南',
+            'CYI': '嘉義',
+            'RMQ': '馬公',
+            'KNH': '金門'
+        }
+        
+        # 分析起飛航班
+        if departure_data and isinstance(departure_data, list):
+            for flight in departure_data:
+                try:
+                    airline_id = flight.get('AirlineID', '')
+                    flight_number = flight.get('FlightNumber', '')
+                    destination_code = flight.get('ArrivalAirportID', '')
+                    destination = airport_names.get(destination_code, destination_code)
+                    schedule_time = flight.get('ScheduleDepartureTime', '')
+                    actual_time = flight.get('ActualDepartureTime', '')
+                    estimated_time = flight.get('EstimatedDepartureTime', '')
+                    remark = flight.get('DepartureRemark', '')
+                    gate = flight.get('Gate', '')
+                    
+                    # 檢查停飛或取消狀況
+                    if remark and any(keyword in remark for keyword in ['取消', '停飛', 'CANCELLED', '暫停']):
+                        warnings.append(f"✈️ 起飛停飛: {airline_id}{flight_number} → {destination} ({schedule_time[:16]}) - {remark}")
+                    
+                    # 檢查延誤狀況（實際時間與排定時間差異）
+                    elif actual_time and schedule_time:
+                        try:
+                            schedule_dt = datetime.fromisoformat(schedule_time)
+                            actual_dt = datetime.fromisoformat(actual_time)
+                            delay_minutes = (actual_dt - schedule_dt).total_seconds() / 60
+                            
+                            # 延誤超過30分鐘才警告
+                            if delay_minutes >= 30:
+                                warnings.append(f"⏰ 起飛延誤: {airline_id}{flight_number} → {destination} 延誤 {int(delay_minutes)} 分鐘")
+                        except:
+                            pass
+                    
+                    # 檢查預計時間延誤
+                    elif estimated_time and schedule_time and not actual_time:
+                        try:
+                            schedule_dt = datetime.fromisoformat(schedule_time)
+                            estimated_dt = datetime.fromisoformat(estimated_time)
+                            delay_minutes = (estimated_dt - schedule_dt).total_seconds() / 60
+                            
+                            if delay_minutes >= 30:
+                                warnings.append(f"⏰ 起飛預計延誤: {airline_id}{flight_number} → {destination} 預計延誤 {int(delay_minutes)} 分鐘")
+                        except:
+                            pass
+                    
+                    # 檢查特殊狀態備註
+                    if remark and any(keyword in remark for keyword in ['延誤', '異常', '等待', '暫緩']):
+                        warnings.append(f"📝 起飛狀況: {airline_id}{flight_number} → {destination} - {remark}")
+                
+                except Exception as e:
+                    logger.error(f"分析起飛航班失敗: {e}")
+        
+        # 分析抵達航班
+        if arrival_data and isinstance(arrival_data, list):
+            for flight in arrival_data:
+                try:
+                    airline_id = flight.get('AirlineID', '')
+                    flight_number = flight.get('FlightNumber', '')
+                    origin_code = flight.get('DepartureAirportID', '')
+                    origin = airport_names.get(origin_code, origin_code)
+                    schedule_time = flight.get('ScheduleArrivalTime', '')
+                    actual_time = flight.get('ActualArrivalTime', '')
+                    estimated_time = flight.get('EstimatedArrivalTime', '')
+                    remark = flight.get('ArrivalRemark', '')
+                    gate = flight.get('Gate', '')
+                    
+                    # 檢查停飛或取消狀況
+                    if remark and any(keyword in remark for keyword in ['取消', '停飛', 'CANCELLED', '暫停']):
+                        warnings.append(f"🛬 抵達停飛: {airline_id}{flight_number} ← {origin} ({schedule_time[:16]}) - {remark}")
+                    
+                    # 檢查延誤狀況（實際時間與排定時間差異）
+                    elif actual_time and schedule_time:
+                        try:
+                            schedule_dt = datetime.fromisoformat(schedule_time)
+                            actual_dt = datetime.fromisoformat(actual_time)
+                            delay_minutes = (actual_dt - schedule_dt).total_seconds() / 60
+                            
+                            # 延誤超過30分鐘才警告
+                            if delay_minutes >= 30:
+                                warnings.append(f"⏰ 抵達延誤: {airline_id}{flight_number} ← {origin} 延誤 {int(delay_minutes)} 分鐘")
+                        except:
+                            pass
+                    
+                    # 檢查預計時間延誤
+                    elif estimated_time and schedule_time and not actual_time:
+                        try:
+                            schedule_dt = datetime.fromisoformat(schedule_time)
+                            estimated_dt = datetime.fromisoformat(estimated_time)
+                            delay_minutes = (estimated_dt - schedule_dt).total_seconds() / 60
+                            
+                            if delay_minutes >= 30:
+                                warnings.append(f"⏰ 抵達預計延誤: {airline_id}{flight_number} ← {origin} 預計延誤 {int(delay_minutes)} 分鐘")
+                        except:
+                            pass
+                    
+                    # 檢查特殊狀態備註
+                    if remark and any(keyword in remark for keyword in ['延誤', '異常', '等待', '暫緩']):
+                        warnings.append(f"📝 抵達狀況: {airline_id}{flight_number} ← {origin} - {remark}")
+                
+                except Exception as e:
+                    logger.error(f"分析抵達航班失敗: {e}")
+        
+        return warnings
+    
+    async def check_flight_conditions(self) -> List[str]:
+        """檢查金門機場航班狀況"""
+        logger.info("開始檢查金門機場航班狀況...")
+        
+        # 並行取得起降資料
+        departure_task = self.get_departure_info()
+        arrival_task = self.get_arrival_info()
+        
+        departure_data, arrival_data = await asyncio.gather(
+            departure_task, arrival_task, return_exceptions=True
+        )
+        
+        # 處理異常情況
+        if isinstance(departure_data, Exception):
+            logger.error(f"取得起飛資料失敗: {departure_data}")
+            departure_data = {}
+        
+        if isinstance(arrival_data, Exception):
+            logger.error(f"取得抵達資料失敗: {arrival_data}")
+            arrival_data = {}
+        
+        # 分析航班狀態
+        flight_warnings = self.analyze_flight_status(departure_data, arrival_data)
+        
+        return flight_warnings
+
+class TyphoonMonitor:
+    def __init__(self):
+        # 設定SSL驗證為False以解決macOS的SSL問題
+        self.client = httpx.AsyncClient(timeout=30.0, verify=False)
+        
+    async def get_weather_alerts(self) -> Dict:
+        """取得天氣特報資訊"""
+        try:
+            url = f"{CWA_BASE_URL}/v1/rest/datastore/W-C0033-001"
+            params = {
+                "Authorization": API_KEY,
+                "format": "JSON",
+                "locationName": ",".join(MONITOR_LOCATIONS)
+            }
+            
+            response = await self.client.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"取得天氣特報失敗: {e}")
+            return {}
+    
+    async def get_typhoon_paths(self) -> Dict:
+        """取得颱風路徑資訊"""
+        try:
+            url = f"{CWA_BASE_URL}/v1/rest/datastore/W-C0034-005"
+            params = {
+                "Authorization": API_KEY,
+                "format": "JSON"
+            }
+            
+            response = await self.client.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"取得颱風路徑失敗: {e}")
+            return {}
+    
+    async def get_weather_forecast(self) -> Dict:
+        """取得36小時天氣預報"""
+        try:
+            url = f"{CWA_BASE_URL}/v1/rest/datastore/F-C0032-001"
+            params = {
+                "Authorization": API_KEY,
+                "format": "JSON",
+                "locationName": ",".join(MONITOR_LOCATIONS)
+            }
+            
+            response = await self.client.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"取得天氣預報失敗: {e}")
+            return {}
+    
+    def analyze_alerts(self, alerts_data: Dict) -> List[str]:
+        """分析警報資料"""
+        warnings = []
+        
+        if not alerts_data or 'records' not in alerts_data:
+            return warnings
+        
+        try:
+            for record in alerts_data.get('records', {}).get('location', []):
+                location_name = record.get('locationName', '')
+                if location_name in MONITOR_LOCATIONS:
+                    hazards = record.get('hazardConditions', {}).get('hazards', [])
+                    for hazard in hazards:
+                        phenomena = hazard.get('phenomena', '')
+                        significance = hazard.get('significance', '')
+                        if '颱風' in phenomena or '強風' in phenomena:
+                            warnings.append(f"⚠️ {location_name}: {phenomena} {significance}")
+        except Exception as e:
+            logger.error(f"分析警報資料失敗: {e}")
+        
+        return warnings
+    
+    def analyze_typhoons(self, typhoon_data: Dict) -> List[str]:
+        """分析颱風路徑資料"""
+        warnings = []
+        
+        if not typhoon_data or 'records' not in typhoon_data:
+            return warnings
+        
+        try:
+            for typhoon in typhoon_data.get('records', {}).get('typhoon', []):
+                name = typhoon.get('typhoonName', '未知颱風')
+                intensity = typhoon.get('intensity', {})
+                max_wind = intensity.get('maximumWind', {}).get('value', 0)
+                
+                # 如果最大風速超過一定值，發出警告
+                # 金門機場側風停飛標準：25節(46.3 km/h)，暴風圈標準：34節(63 km/h)
+                if max_wind > 60:  # km/h - 調整為更實際的航班風險閾值
+                    if max_wind > 80:
+                        warnings.append(f"🌀 {name}颱風 最大風速: {max_wind} km/h (航班高風險)")
+                    else:
+                        warnings.append(f"🌀 {name}颱風 最大風速: {max_wind} km/h (航班可能影響)")
+                    
+                    # 檢查預報路徑是否影響目標區域
+                    forecasts = typhoon.get('forecast', [])
+                    for forecast in forecasts:
+                        location = forecast.get('location', {})
+                        lat = location.get('lat', 0)
+                        lon = location.get('lon', 0)
+                        
+                        # 簡單的地理區域判斷（台灣範圍）
+                        if 22 <= lat <= 25.5 and 119 <= lon <= 122:
+                            forecast_time = forecast.get('time', '')
+                            warnings.append(f"📍 {name}颱風預報將於 {forecast_time} 接近台灣")
+                            break
+        except Exception as e:
+            logger.error(f"分析颱風資料失敗: {e}")
+        
+        return warnings
+    
+    def analyze_weather(self, weather_data: Dict) -> List[str]:
+        """分析天氣預報資料"""
+        warnings = []
+        
+        if not weather_data or 'records' not in weather_data:
+            return warnings
+        
+        try:
+            for location in weather_data.get('records', {}).get('location', []):
+                location_name = location.get('locationName', '')
+                if location_name in MONITOR_LOCATIONS:
+                    elements = location.get('weatherElement', [])
+                    for element in elements:
+                        element_name = element.get('elementName', '')
+                        if element_name == 'Wx':  # 天氣現象
+                            times = element.get('time', [])
+                            for time_data in times:
+                                start_time = time_data.get('startTime', '')
+                                weather_desc = time_data.get('parameter', {}).get('parameterName', '')
+                                
+                                # 檢查是否有惡劣天氣
+                                if any(keyword in weather_desc for keyword in ['颱風', '暴風', '豪雨', '大雨']):
+                                    warnings.append(f"🌧️ {location_name} {start_time}: {weather_desc}")
+        except Exception as e:
+            logger.error(f"分析天氣資料失敗: {e}")
+        
+        return warnings
+    
+    async def check_all_conditions(self) -> Dict:
+        """檢查所有條件"""
+        logger.info("開始檢查天氣條件...")
+        
+        # 並行取得所有資料
+        alerts_task = self.get_weather_alerts()
+        typhoons_task = self.get_typhoon_paths()
+        weather_task = self.get_weather_forecast()
+        departure_task = airport_monitor.get_departure_info()
+        arrival_task = airport_monitor.get_arrival_info()
+        
+        alerts_data, typhoons_data, weather_data, departure_data, arrival_data = await asyncio.gather(
+            alerts_task, typhoons_task, weather_task, departure_task, arrival_task, return_exceptions=True
+        )
+        
+        # 更新全域狀態
+        global latest_alerts, latest_typhoons, latest_weather, latest_airport_departure, latest_airport_arrival, last_notification_status
+        latest_alerts = alerts_data if not isinstance(alerts_data, Exception) else {}
+        latest_typhoons = typhoons_data if not isinstance(typhoons_data, Exception) else {}
+        latest_weather = weather_data if not isinstance(weather_data, Exception) else {}
+        latest_airport_departure = departure_data if not isinstance(departure_data, Exception) else {}
+        latest_airport_arrival = arrival_data if not isinstance(arrival_data, Exception) else {}
+        
+        # 分析機場資料
+        flight_warnings = airport_monitor.analyze_flight_status(latest_airport_departure, latest_airport_arrival)
+        
+        # 分析所有資料
+        alert_warnings = self.analyze_alerts(latest_alerts)
+        typhoon_warnings = self.analyze_typhoons(latest_typhoons)
+        weather_warnings = self.analyze_weather(latest_weather)
+        
+        all_warnings = alert_warnings + typhoon_warnings + weather_warnings + flight_warnings
+        
+        result = {
+            "timestamp": datetime.now().isoformat(),
+            "warnings": all_warnings,
+            "status": "DANGER" if all_warnings else "SAFE",
+            "travel_risk": self.assess_travel_risk(all_warnings),
+            "checkup_risk": self.assess_checkup_risk(all_warnings)
+        }
+        
+        # 輸出警報到控制台
+        self.print_alerts(result)
+        
+        # 檢查是否需要發送LINE通知
+        await self.check_and_send_line_notification(result)
+        
+        return result
+    
+    async def check_and_send_line_notification(self, result: Dict):
+        """檢查並發送LINE通知"""
+        global last_notification_status
+        current_status = result["status"]
+        
+        # 只在狀態變化且變為DANGER時發送通知
+        if current_status == "DANGER" and last_notification_status != "DANGER":
+            await line_notifier.push_typhoon_status_flex(result)
+            logger.info("已發送LINE風險 Flex Message 通知")
+        
+        # 更新上次通知狀態
+        last_notification_status = current_status
+    
+    def assess_travel_risk(self, warnings: List[str]) -> str:
+        """評估7/6航班風險"""
+        if not warnings:
+            return "低風險"
+        
+        typhoon_warnings = [w for w in warnings if '颱風' in w]
+        wind_warnings = [w for w in warnings if '強風' in w or '暴風' in w]
+        flight_warnings = [w for w in warnings if '停飛' in w or '取消' in w]
+        delay_warnings = [w for w in warnings if '延誤' in w]
+        
+        # 實際航班已有停飛或取消，風險最高
+        if flight_warnings:
+            return "高風險 - 航班已停飛/取消"
+        elif typhoon_warnings:
+            return "高風險 - 建議考慮改期"
+        elif delay_warnings:
+            return "中風險 - 航班可能延誤"
+        elif wind_warnings:
+            return "中風險 - 密切關注"
+        else:
+            return "中風險 - 持續監控"
+    
+    def assess_checkup_risk(self, warnings: List[str]) -> str:
+        """評估7/7體檢風險"""
+        if not warnings:
+            return "低風險"
+        
+        for warning in warnings:
+            if '台南' in warning or '臺南' in warning:
+                if '颱風' in warning:
+                    return "高風險 - 可能停班停課"
+                elif '強風' in warning or '豪雨' in warning:
+                    return "中風險 - 可能影響交通"
+        
+        return "低風險"
+    
+    def print_alerts(self, result: Dict):
+        """在控制台輸出警報"""
+        print("\n" + "="*60)
+        print(f"🚨 颱風警訊播報系統 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("="*60)
+        
+        status = result["status"]
+        if status == "DANGER":
+            print("🔴 警告狀態: 有風險")
+        else:
+            print("🟢 安全狀態: 無明顯風險")
+        
+        print(f"\n✈️ 7/6 金門→台南航班風險: {result['travel_risk']}")
+        print(f"🏥 7/7 台南體檢風險: {result['checkup_risk']}")
+        
+        warnings = result["warnings"]
+        if warnings:
+            print("\n📢 目前警報:")
+            for warning in warnings:
+                print(f"  {warning}")
+        else:
+            print("\n✅ 目前無特殊警報")
+        
+        print("="*60)
+
+
 
 # 建立監控器實例
 monitor = TyphoonMonitor()
