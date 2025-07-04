@@ -552,11 +552,6 @@ class FlexMessageBuilder:
                 }
             ])
         
-        # 添加天氣原始資料
-        weather_data = self._get_weather_raw_data_flex()
-        if weather_data:
-            typhoon_contents.extend(weather_data)
-        
         # 添加風險評估說明
         typhoon_contents.extend([
             {
@@ -589,154 +584,6 @@ class FlexMessageBuilder:
         
         return typhoon_contents
     
-    def _get_weather_raw_data_flex(self) -> List[Dict]:
-        """取得天氣原始資料的 Flex 內容"""
-        weather_contents = []
-        
-        try:
-            # Get data from global storage
-            from utils.helpers import get_global_data
-            data = get_global_data()
-            latest_weather = data['latest_weather']
-            latest_alerts = data['latest_alerts']
-            
-            # 添加天氣預報資料
-            if latest_weather and 'records' in latest_weather:
-                weather_items_found = False
-                
-                for location in latest_weather.get('records', {}).get('location', []):
-                    location_name = location.get('locationName', '')
-                    if location_name in settings.MONITOR_LOCATIONS:
-                        if not weather_items_found:
-                            weather_contents.extend([
-                                {
-                                    "type": "separator",
-                                    "margin": "md"
-                                },
-                                {
-                                    "type": "box",
-                                    "layout": "vertical",
-                                    "margin": "md",
-                                    "contents": [
-                                        {
-                                            "type": "text",
-                                            "text": f"🌤️ {location_name} 天氣資料",
-                                            "weight": "bold",
-                                            "color": "#2E8B57",
-                                            "size": "sm"
-                                        }
-                                    ]
-                                }
-                            ])
-                            weather_items_found = True
-                        
-                        elements = location.get('weatherElement', [])
-                        weather_items = []
-                        
-                        for element in elements:
-                            element_name = element.get('elementName', '')
-                            times = element.get('time', [])
-                            
-                            if times:
-                                latest_time = times[0]
-                                value = latest_time.get('parameter', {}).get('parameterName', '')
-                                
-                                if element_name == 'Wx' and value:  # 天氣現象
-                                    weather_items.append(("🌤️", "天氣", f"{value}"))
-                                elif element_name == 'PoP' and value:  # 降雨機率
-                                    weather_items.append(("🌧️", "降雨機率", f"{value}%"))
-                                elif element_name == 'MinT' and value:  # 最低溫度
-                                    weather_items.append(("🌡️", "最低溫", f"{value}°C"))
-                                elif element_name == 'MaxT' and value:  # 最高溫度
-                                    weather_items.append(("🌡️", "最高溫", f"{value}°C"))
-                        
-                        # 生成天氣資料的 Flex 內容
-                        for icon, label, value in weather_items[:4]:  # 最多顯示4項
-                            weather_contents.append({
-                                "type": "box",
-                                "layout": "horizontal",
-                                "margin": "xs",
-                                "contents": [
-                                    {
-                                        "type": "text",
-                                        "text": icon,
-                                        "size": "xs",
-                                        "flex": 0
-                                    },
-                                    {
-                                        "type": "text",
-                                        "text": label,
-                                        "size": "xs",
-                                        "color": "#666666",
-                                        "margin": "sm",
-                                        "flex": 1
-                                    },
-                                    {
-                                        "type": "text",
-                                        "text": str(value),
-                                        "size": "xs",
-                                        "color": "#333333",
-                                        "weight": "bold",
-                                        "align": "end",
-                                        "flex": 1,
-                                        "wrap": True
-                                    }
-                                ]
-                            })
-                        
-                        # 只顯示第一個地區的資料
-                        break
-            
-            # 添加特報資料
-            if latest_alerts and 'records' in latest_alerts:
-                alert_items_found = False
-                
-                for record in latest_alerts.get('records', {}).get('location', []):
-                    location_name = record.get('locationName', '')
-                    if location_name in settings.MONITOR_LOCATIONS:
-                        hazards = record.get('hazardConditions', {}).get('hazards', [])
-                        if hazards and not alert_items_found:
-                            weather_contents.extend([
-                                {
-                                    "type": "separator",
-                                    "margin": "md"
-                                },
-                                {
-                                    "type": "box",
-                                    "layout": "vertical",
-                                    "margin": "md",
-                                    "contents": [
-                                        {
-                                            "type": "text",
-                                            "text": f"⚠️ {location_name} 特報",
-                                            "weight": "bold",
-                                            "color": "#FF4757",
-                                            "size": "sm"
-                                        }
-                                    ]
-                                }
-                            ])
-                            alert_items_found = True
-                            
-                            for hazard in hazards[:2]:  # 最多顯示2個特報
-                                phenomena = hazard.get('phenomena', '')
-                                significance = hazard.get('significance', '')
-                                if phenomena:
-                                    weather_contents.append({
-                                        "type": "text",
-                                        "text": f"📢 {phenomena} {significance}",
-                                        "size": "xs",
-                                        "color": "#FF4757",
-                                        "margin": "xs",
-                                        "wrap": True
-                                    })
-                            break
-                            
-        except Exception as e:
-            logger.warning(f"解析天氣原始資料失敗: {e}")
-        
-        return weather_contents
-    
     def _get_tainan_weekly_weather(self) -> List[Dict]:
         """取得台南市一週天氣預報，表格型橫顯示"""
         forecast_contents = []
@@ -745,14 +592,13 @@ class FlexMessageBuilder:
             # Get data from global storage
             from utils.helpers import get_global_data
             from datetime import datetime, timedelta
-            import asyncio
-            from services.weather_service import WeatherService
             
-            # 日期範圍：7/6-7/10
-            target_dates = [
-                "2025-07-06", "2025-07-07", "2025-07-08", 
-                "2025-07-09", "2025-07-10"
-            ]
+            # 動態計算日期範圍（今天起5天）
+            today = datetime.now()
+            target_dates = []
+            for i in range(5):
+                date = today + timedelta(days=i)
+                target_dates.append(date.strftime('%Y-%m-%d'))
             
             forecast_contents.extend([
                 {
@@ -766,7 +612,7 @@ class FlexMessageBuilder:
                     "contents": [
                         {
                             "type": "text",
-                            "text": "🌧️ 台南市天氣預報 (7/6-7/10)",
+                            "text": "🌧️ 台南市天氣預報 (未來5天)",
                             "weight": "bold",
                             "color": "#1976D2",
                             "size": "sm"
@@ -789,36 +635,56 @@ class FlexMessageBuilder:
             if tainan_weather and 'records' in tainan_weather:
                 tainan_data = None
                 
-                # 找到台南的天氣資料
-                for location in tainan_weather.get('records', {}).get('location', []):
-                    location_name = location.get('locationName', '')
-                    if '台南' in location_name or '臺南' in location_name:
-                        tainan_data = location
-                        break
+                # 新的 API 結構：records.Locations[0].Location[0]
+                locations_data = tainan_weather.get('records', {}).get('Locations', [])
+                if locations_data and len(locations_data) > 0:
+                    location_list = locations_data[0].get('Location', [])
+                    for location in location_list:
+                        location_name = location.get('LocationName', '')
+                        if '台南' in location_name or '臺南' in location_name:
+                            tainan_data = location
+                            break
                 
                 if tainan_data:
                     # 處理天氣元素
-                    elements = tainan_data.get('weatherElement', [])
+                    elements = tainan_data.get('WeatherElement', [])
                     
                     # 按日期組織資料
                     daily_forecast = {}
                     
                     for element in elements:
-                        element_name = element.get('elementName', '')
-                        times = element.get('time', [])
+                        element_name = element.get('ElementName', '')
+                        times = element.get('Time', [])
                         
-                        # 只關注天氣現象和降雨機率，忽略溫度
-                        if element_name in ['天氣現象', '降雨機率']:
+                        # 處理天氣現象、風速、降雨機率
+                        if element_name in ['天氣現象', '風速', '天氣預報綜合描述']:
                             for time_data in times:
-                                start_time = time_data.get('startTime', '')
+                                start_time = time_data.get('StartTime', '')
                                 if start_time:
                                     date_str = start_time[:10]  # 取YYYY-MM-DD
                                     if date_str in target_dates:
                                         if date_str not in daily_forecast:
                                             daily_forecast[date_str] = {}
                                         
-                                        value = time_data.get('parameter', {}).get('parameterName', '')
-                                        daily_forecast[date_str][element_name] = value
+                                        # 根據元素類型取得不同的值
+                                        element_values = time_data.get('ElementValue', [])
+                                        if element_values and len(element_values) > 0:
+                                            if element_name == '天氣現象':
+                                                value = element_values[0].get('Weather', '無資料')
+                                            elif element_name == '風速':
+                                                wind_speed = element_values[0].get('WindSpeed', '無資料')
+                                                beaufort = element_values[0].get('BeaufortScale', '')
+                                                value = f"{wind_speed}級" if beaufort else wind_speed
+                                            elif element_name == '天氣預報綜合描述':
+                                                desc = element_values[0].get('WeatherDescription', '')
+                                                # 從描述中提取降雨機率
+                                                import re
+                                                rain_match = re.search(r'降雨機率(\d+)%', desc)
+                                                if rain_match:
+                                                    daily_forecast[date_str]['降雨機率'] = rain_match.group(1)
+                                                value = desc
+                                            
+                                            daily_forecast[date_str][element_name] = value
                     
                     # 生成表格式顯示
                     if daily_forecast:
@@ -845,8 +711,20 @@ class FlexMessageBuilder:
                         for date_str in sorted_dates:
                             daily_data = daily_forecast[date_str]
                             weather_desc = daily_data.get('天氣現象', '無資料')
-                            # 只取前4個字節省空間
-                            short_desc = weather_desc[:4] if len(weather_desc) > 4 else weather_desc
+                            # 縮短天氣描述以適應表格
+                            if '短暫陣雨或雷雨' in weather_desc:
+                                short_desc = '陣雨雷雨'
+                            elif '短暫陣雨' in weather_desc:
+                                short_desc = '陣雨'
+                            elif '多雲時晴' in weather_desc:
+                                short_desc = '多雲晴'
+                            elif '多雲時陰' in weather_desc:
+                                short_desc = '多雲陰'
+                            elif '陰時多雲' in weather_desc:
+                                short_desc = '陰多雲'
+                            else:
+                                short_desc = weather_desc[:4] if len(weather_desc) > 4 else weather_desc
+                            
                             weather_row.append({
                                 "type": "text",
                                 "text": short_desc,
@@ -871,25 +749,90 @@ class FlexMessageBuilder:
                                 "align": "center"
                             })
                         
+                        # 風速行
+                        wind_row = []
+                        for date_str in sorted_dates:
+                            daily_data = daily_forecast[date_str]
+                            wind_speed = daily_data.get('風速', '無資料')
+                            # 處理特殊風速顯示
+                            if '>=' in wind_speed:
+                                wind_display = '強風'
+                                wind_color = "#E53E3E"
+                            elif '無資料' in wind_speed:
+                                wind_display = '-'
+                                wind_color = "#666666"
+                            else:
+                                wind_display = wind_speed
+                                wind_color = "#666666"
+                            
+                            wind_row.append({
+                                "type": "text",
+                                "text": wind_display,
+                                "size": "xs",
+                                "color": wind_color,
+                                "flex": 1,
+                                "align": "center"
+                            })
+                        
                         # 添加表格內容
                         forecast_contents.extend([
+                            # 日期標題行
                             {
                                 "type": "box",
                                 "layout": "horizontal",
                                 "margin": "sm",
                                 "contents": date_headers
                             },
+                            # 天氣現象行
                             {
                                 "type": "box",
                                 "layout": "horizontal",
                                 "margin": "xs",
-                                "contents": weather_row
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "天氣",
+                                        "size": "xs",
+                                        "color": "#999999",
+                                        "weight": "bold",
+                                        "flex": 0,
+                                        "margin": "none"
+                                    }
+                                ] + weather_row
                             },
+                            # 降雨機率行
                             {
                                 "type": "box",
                                 "layout": "horizontal",
                                 "margin": "xs",
-                                "contents": rain_row
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "降雨",
+                                        "size": "xs",
+                                        "color": "#999999",
+                                        "weight": "bold",
+                                        "flex": 0,
+                                        "margin": "none"
+                                    }
+                                ] + rain_row
+                            },
+                            # 風速行
+                            {
+                                "type": "box",
+                                "layout": "horizontal",
+                                "margin": "xs",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "風力",
+                                        "size": "xs",
+                                        "color": "#999999",
+                                        "weight": "bold",
+                                        "flex": 0,
+                                        "margin": "none"
+                                    }
+                                ] + wind_row
                             }
                         ])
                 
@@ -1038,3 +981,18 @@ class FlexMessageBuilder:
             logger.warning(f"取得颱風時間資訊失敗: {e}")
         
         return timing_contents
+    
+    def _get_weather_color(self, weather_desc: str) -> str:
+        """根據天氣描述返回對應的顏色"""
+        if '雷雨' in weather_desc or '大雨' in weather_desc:
+            return "#E53E3E"  # 紅色 - 惡劣天氣
+        elif '陣雨' in weather_desc or '雨' in weather_desc:
+            return "#3182CE"  # 藍色 - 有雨
+        elif '陰' in weather_desc:
+            return "#718096"  # 灰色 - 陰天
+        elif '多雲' in weather_desc:
+            return "#805AD5"  # 紫色 - 多雲
+        elif '晴' in weather_desc:
+            return "#D69E2E"  # 橙色 - 晴天
+        else:
+            return "#666666"  # 預設灰色

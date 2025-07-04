@@ -334,6 +334,10 @@ class LineNotifier:
         except Exception as e:
             logger.error(f"LINE推送失敗: {e}")
     
+    async def push_text_message(self, message: str):
+        """推送純文字訊息給所有用戶"""
+        await self.push_to_all_friends(message)
+    
     async def reply_typhoon_status_flex(self, reply_token: str, result: Dict):
         """回覆颱風狀態 Flex Message"""
         try:

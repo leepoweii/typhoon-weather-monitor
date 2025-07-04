@@ -18,6 +18,7 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent
 # Import modular components
 from config.settings import settings
 from services.monitoring_service import TyphoonMonitor
+from services.alert_monitor import AlertMonitor
 from notifications.line_bot import LineNotifier, create_webhook_handler
 from utils.helpers import get_global_data
 
@@ -41,6 +42,7 @@ line_user_ids = []
 
 # 初始化服務
 monitor = TyphoonMonitor()
+alert_monitor = AlertMonitor()
 line_notifier = LineNotifier()
 handler = create_webhook_handler()
 
@@ -69,6 +71,30 @@ async def continuous_monitoring():
         
         # 等待下次檢查
         await asyncio.sleep(settings.CHECK_INTERVAL)
+
+async def alert_monitoring():
+    """每5分鐘檢查天氣特報並推送簡潔警告"""
+    logger.info("開始天氣特報監控...")
+    
+    while True:
+        try:
+            # 檢查是否有新的警報
+            alert_message = await alert_monitor.check_and_format_alerts()
+            
+            if alert_message:
+                logger.info("發現新的天氣特報，準備發送通知")
+                
+                # 設置用戶ID並發送文字訊息
+                line_notifier.set_user_ids(line_user_ids)
+                await line_notifier.push_text_message(alert_message)
+                
+                logger.info("天氣特報通知已發送")
+            
+        except Exception as e:
+            logger.error(f"天氣特報監控過程中發生錯誤: {e}")
+        
+        # 等待 5 分鐘
+        await asyncio.sleep(300)  # 300 秒 = 5 分鐘
 
 async def check_and_send_line_notification(result: dict):
     """檢查是否需要發送LINE通知"""
@@ -105,10 +131,8 @@ def handle_message(event):
         line_user_ids.append(user_id)
         logger.info(f"新增用戶ID: {user_id}")
     
-    # 檢查是否為觸發關鍵字
-    trigger_keywords = ["颱風", "天氣", "狀況", "警報", "風險", "監控", "檢查"]
-    
-    if any(keyword in user_message for keyword in trigger_keywords):
+    # 只回應完全相等的「颱風現況」關鍵字
+    if user_message == "颱風現況":
         logger.info(f"觸發關鍵字檢測: {user_message}")
         
         # 創建檢查任務
@@ -130,9 +154,11 @@ def handle_message(event):
 async def lifespan(app):
     # 啟動時開始監控
     task = asyncio.create_task(continuous_monitoring())
+    alert_task = asyncio.create_task(alert_monitoring())
     yield
     # FastAPI 關閉時清理資源
     task.cancel()
+    alert_task.cancel()
     await monitor.close()
 
 # FastAPI 應用程式

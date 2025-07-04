@@ -65,7 +65,7 @@ class WeatherService:
                 "Authorization": settings.API_KEY,
                 "format": "JSON",
                 "LocationName": "臺南市",
-                "ElementName": "天氣現象,降雨機率"
+                "ElementName": "天氣預報綜合描述,降雨機率,風向,風速,天氣現象"
             }
             
             response = await self.client.get(url, params=params)
