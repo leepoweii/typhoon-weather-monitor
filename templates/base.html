@@ -156,6 +156,37 @@
             margin: 24px 0; border-radius: 1px; 
         }
         
+        /* Typhoon Map Section */
+        .typhoon-map-section { 
+            margin: 24px 0; background: #f8f9fa; border-radius: 12px; 
+            padding: 20px; border: 1px solid #dee2e6; 
+        }
+        .typhoon-map-section h2 { 
+            margin-top: 0; margin-bottom: 16px; color: #1976d2; 
+        }
+        .map-controls { 
+            display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; 
+        }
+        .map-controls button, .map-controls a { 
+            padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; 
+            font-size: 14px; transition: all 0.3s ease; font-weight: 500; 
+            text-decoration: none; display: inline-flex; align-items: center; 
+        }
+        .map-toggle-btn { background: #1976d2; color: white; }
+        .map-toggle-btn:hover { background: #1565c0; }
+        .map-toggle-btn.active { background: #d32f2f; }
+        .map-refresh-btn { background: #4caf50; color: white; }
+        .map-refresh-btn:hover { background: #45a049; }
+        .map-external-btn { background: #ff9800; color: white; }
+        .map-external-btn:hover { background: #f57c00; text-decoration: none; }
+        .map-container { 
+            border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+            border: 1px solid #e0e0e0; background: white; 
+        }
+        .map-container iframe { 
+            width: 100%; border: none; display: block; 
+        }
+        
         /* Data states */
         .no-data { 
             color: #718096; font-style: italic; text-align: center; 
@@ -190,6 +221,25 @@
             .data-grid { grid-template-columns: 1fr; }
             .data-controls { justify-content: center; }
             .typhoon-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+            
+            /* Mobile typhoon map adjustments */
+            .typhoon-map-section { margin: 16px 0; padding: 16px; }
+            .map-controls { 
+                flex-direction: column; gap: 8px; 
+            }
+            .map-controls button, .map-controls a { 
+                width: 100%; justify-content: center; 
+            }
+            .map-container iframe { 
+                height: 400px; /* Reduce height on mobile */
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .typhoon-map-section h2 { font-size: 18px; }
+            .map-container iframe { 
+                height: 300px; /* Further reduce on very small screens */
+            }
         }
     </style>
 </head>

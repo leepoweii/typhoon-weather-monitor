@@ -14,6 +14,28 @@
     <p>機場即時監控功能因 API 限制暫時禁用。航班風險評估基於天氣預報進行。</p>
 </div>
 
+<!-- 中央氣象署颱風觀測地圖 -->
+<div class="typhoon-map-section">
+    <h2>🗺️ 中央氣象署颱風觀測地圖</h2>
+    <div class="map-controls">
+        <button onclick="toggleMap()" class="map-toggle-btn" id="mapToggleBtn">🗺️ 顯示地圖</button>
+        <button onclick="refreshMap()" class="map-refresh-btn">🔄 刷新地圖</button>
+        <a href="https://app.cwa.gov.tw/web/obsmap/typhoon.html" target="_blank" class="map-external-btn">🔗 在新視窗開啟</a>
+    </div>
+    <div class="map-container" id="mapContainer" style="display: none;">
+        <iframe id="typhoonMap" 
+                src="https://app.cwa.gov.tw/web/obsmap/typhoon.html"
+                width="100%" 
+                height="600" 
+                frameborder="0"
+                scrolling="auto"
+                loading="lazy"
+                title="中央氣象署颱風觀測地圖">
+            <p>您的瀏覽器不支援 iframe。請 <a href="https://app.cwa.gov.tw/web/obsmap/typhoon.html" target="_blank">點擊這裡</a> 在新視窗開啟颱風觀測地圖。</p>
+        </iframe>
+    </div>
+</div>
+
 <!-- 原始氣象資料區塊 -->
 <div class="raw-data-section">
     <h2>📊 原始氣象資料</h2>
@@ -662,6 +684,61 @@
         if (risk.includes('中風險')) return 'medium';
         return 'low';
     }
+
+    // Typhoon Map Functions
+    function toggleMap() {
+        const mapContainer = document.getElementById('mapContainer');
+        const toggleBtn = document.getElementById('mapToggleBtn');
+        
+        if (mapContainer.style.display === 'none') {
+            mapContainer.style.display = 'block';
+            toggleBtn.textContent = '🗺️ 隱藏地圖';
+            toggleBtn.classList.add('active');
+            
+            // 延遲載入 iframe 以提升性能
+            const iframe = document.getElementById('typhoonMap');
+            if (!iframe.src || iframe.src === 'about:blank') {
+                iframe.src = 'https://app.cwa.gov.tw/web/obsmap/typhoon.html';
+            }
+        } else {
+            mapContainer.style.display = 'none';
+            toggleBtn.textContent = '🗺️ 顯示地圖';
+            toggleBtn.classList.remove('active');
+        }
+    }
+
+    function refreshMap() {
+        const iframe = document.getElementById('typhoonMap');
+        const refreshBtn = document.querySelector('.map-refresh-btn');
+        
+        refreshBtn.textContent = '⏳ 更新中...';
+        refreshBtn.disabled = true;
+        
+        // 強制重新載入 iframe
+        const currentSrc = iframe.src;
+        iframe.src = 'about:blank';
+        
+        setTimeout(() => {
+            iframe.src = currentSrc + '?t=' + new Date().getTime(); // 加入時間戳避免快取
+            
+            iframe.onload = () => {
+                refreshBtn.textContent = '✅ 已更新';
+                setTimeout(() => {
+                    refreshBtn.textContent = '🔄 刷新地圖';
+                    refreshBtn.disabled = false;
+                }, 2000);
+            };
+            
+            // 如果載入失敗的備用方案
+            setTimeout(() => {
+                if (refreshBtn.disabled) {
+                    refreshBtn.textContent = '🔄 刷新地圖';
+                    refreshBtn.disabled = false;
+                }
+            }, 10000);
+        }, 500);
+    }
+
     // 每30秒更新一次
     updateData();
     setInterval(updateData, 30000);
