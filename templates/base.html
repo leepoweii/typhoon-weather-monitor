@@ -1007,6 +1007,151 @@
             line-height: 1.6;
         }
 
+        .api-notice {
+            background: rgba(226, 227, 229, 0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(214, 216, 219, 0.3);
+            border-left: 4px solid #d6d8db;
+            padding: var(--spacing-md);
+            margin-top: var(--spacing-md);
+            border-radius: var(--radius-md);
+            color: white;
+            font-weight: 500;
+            line-height: 1.6;
+        }
+
+        /* Typhoon Timing Details Section */
+        .typhoon-timing-details-section {
+            margin-top: var(--spacing-lg);
+        }
+        
+        .timing-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-lg);
+            box-shadow: var(--shadow-md);
+            margin-bottom: var(--spacing-lg);
+            border-left: 8px solid #ffc107;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .timing-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .timing-summary p {
+            margin: var(--spacing-xs) 0;
+            font-size: 1.1rem;
+            color: white;
+            font-weight: 500;
+            line-height: 1.5;
+        }
+        
+        .details-btn {
+            background: var(--primary-gradient);
+            color: white;
+            border: none;
+            padding: var(--spacing-sm) var(--spacing-md);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            margin-top: var(--spacing-md);
+            transition: all 0.3s ease;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.875rem;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .details-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+        
+        .details-btn:hover::before {
+            left: 100%;
+        }
+        
+        .details-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+        
+        .raw-timing-data {
+            margin-top: var(--spacing-md);
+            max-height: 300px;
+            overflow-y: auto;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            padding-top: var(--spacing-md);
+        }
+        
+        .raw-timing-data table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+        }
+        
+        .raw-timing-data th,
+        .raw-timing-data td {
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: var(--spacing-sm);
+            text-align: left;
+            color: white;
+            font-size: 0.875rem;
+        }
+        
+        .raw-timing-data th {
+            background: rgba(255, 255, 255, 0.1);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 0.75rem;
+        }
+        
+        .estimation-note {
+            background: rgba(255, 243, 205, 0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 235, 186, 0.3);
+            border-left: 4px solid #ffeeba;
+            padding: var(--spacing-md);
+            margin-top: var(--spacing-lg);
+            border-radius: var(--radius-md);
+            color: white;
+            font-weight: 500;
+            line-height: 1.6;
+        }
+        
+        .api-notice {
+            background: rgba(226, 227, 229, 0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(214, 216, 219, 0.3);
+            border-left: 4px solid #d6d8db;
+            padding: var(--spacing-md);
+            margin-top: var(--spacing-md);
+            border-radius: var(--radius-md);
+            color: white;
+            font-weight: 500;
+            line-height: 1.6;
+        }
+
         /* Scrollbar Styling */
         ::-webkit-scrollbar {
             width: 8px;
