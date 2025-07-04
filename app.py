@@ -19,7 +19,10 @@ import base64
 # LINE Bot SDK
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, PushMessageRequest, ReplyMessageRequest, TextMessage
+from linebot.v3.messaging import (
+    Configuration, ApiClient, MessagingApi, PushMessageRequest, ReplyMessageRequest, 
+    TextMessage, FlexMessage, FlexContainer
+)
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 # 設置日誌
@@ -84,9 +87,13 @@ class LineNotifier:
     def __init__(self):
         self.api_client = ApiClient(configuration)
         self.line_bot_api = MessagingApi(self.api_client)
+        # 初始化 FlexMessageBuilder，使用 Zeabur 或本地 URL
+        self.flex_builder = FlexMessageBuilder(
+            base_url=os.getenv("APP_URL", f"http://localhost:{SERVER_PORT}")
+        )
     
     def format_typhoon_status(self, result: Dict) -> str:
-        """格式化颱風狀態訊息"""
+        """格式化颱風狀態訊息（保留文字版本作為備用）"""
         timestamp = datetime.fromisoformat(result["timestamp"].replace('Z', '+00:00'))
         status_icon = "🔴" if result["status"] == "DANGER" else "🟢"
         status_text = "有風險" if result["status"] == "DANGER" else "無明顯風險"
@@ -99,11 +106,11 @@ class LineNotifier:
         
         if result["warnings"]:
             # 分類警告訊息
-            flight_warnings = [w for w in result["warnings"] if any(keyword in w for keyword in ['起飛', '抵達', '航班', '停飛', '延誤'])]
+            flight_warnings = [w for w in result["warnings"] if any(keyword in w for keyword in ['起飛', '抵達', '航班', '停飛', '延誤', '機場API'])]
             weather_warnings = [w for w in result["warnings"] if w not in flight_warnings]
             
             if flight_warnings:
-                message += "� 金門機場即時狀況:\n"
+                message += "✈️ 金門機場即時狀況:\n"
                 for warning in flight_warnings:
                     message += f"• {warning}\n"
                 message += "\n"
@@ -117,8 +124,51 @@ class LineNotifier:
         
         return message.strip()
     
+    async def push_typhoon_status_flex(self, result: Dict):
+        """推送颱風狀態 Flex Message 給所有好友"""
+        if not line_user_ids:
+            logger.warning("沒有LINE好友ID，無法發送推送訊息")
+            return
+        
+        try:
+            flex_container = self.flex_builder.create_typhoon_status_flex(result)
+            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container)
+            
+            for user_id in line_user_ids:
+                push_message = PushMessageRequest(
+                    to=user_id,
+                    messages=[flex_message]
+                )
+                self.line_bot_api.push_message(push_message)
+            logger.info(f"成功推送 Flex Message 給 {len(line_user_ids)} 位好友")
+        except Exception as e:
+            logger.error(f"LINE Flex 推送失敗，嘗試文字版本: {e}")
+            # 失敗時回退到文字訊息
+            text_message = self.format_typhoon_status(result)
+            await self.push_to_all_friends(text_message)
+    
+    async def push_airport_status_flex(self, airport_data: Dict):
+        """推送機場狀態 Flex Message 給所有好友"""
+        if not line_user_ids:
+            logger.warning("沒有LINE好友ID，無法發送推送訊息")
+            return
+        
+        try:
+            flex_container = self.flex_builder.create_airport_status_flex(airport_data)
+            flex_message = FlexMessage(alt_text="金門機場即時狀況", contents=flex_container)
+            
+            for user_id in line_user_ids:
+                push_message = PushMessageRequest(
+                    to=user_id,
+                    messages=[flex_message]
+                )
+                self.line_bot_api.push_message(push_message)
+            logger.info(f"成功推送機場 Flex Message 給 {len(line_user_ids)} 位好友")
+        except Exception as e:
+            logger.error(f"LINE 機場 Flex 推送失敗: {e}")
+    
     async def push_to_all_friends(self, message: str):
-        """推送訊息給所有好友"""
+        """推送文字訊息給所有好友（備用方法）"""
         if not line_user_ids:
             logger.warning("沒有LINE好友ID，無法發送推送訊息")
             return
@@ -130,12 +180,30 @@ class LineNotifier:
                     messages=[TextMessage(text=message)]
                 )
                 self.line_bot_api.push_message(push_message)
-            logger.info(f"成功推送訊息給 {len(line_user_ids)} 位好友")
+            logger.info(f"成功推送文字訊息給 {len(line_user_ids)} 位好友")
         except Exception as e:
             logger.error(f"LINE推送失敗: {e}")
     
+    async def reply_typhoon_status_flex(self, reply_token: str, result: Dict):
+        """回覆颱風狀態 Flex Message"""
+        try:
+            flex_container = self.flex_builder.create_typhoon_status_flex(result)
+            flex_message = FlexMessage(alt_text="颱風警訊播報", contents=flex_container)
+            
+            reply_message = ReplyMessageRequest(
+                reply_token=reply_token,
+                messages=[flex_message]
+            )
+            self.line_bot_api.reply_message(reply_message)
+            logger.info("成功回覆 Flex Message")
+        except Exception as e:
+            logger.error(f"LINE Flex 回覆失敗，嘗試文字版本: {e}")
+            # 失敗時回退到文字訊息
+            text_message = self.format_typhoon_status(result)
+            await self.reply_message(reply_token, text_message)
+    
     async def reply_message(self, reply_token: str, message: str):
-        """回覆訊息"""
+        """回覆文字訊息（備用方法）"""
         try:
             reply_message = ReplyMessageRequest(
                 reply_token=reply_token,
@@ -145,6 +213,26 @@ class LineNotifier:
             logger.info("成功回覆LINE訊息")
         except Exception as e:
             logger.error(f"LINE回覆失敗: {e}")
+    
+    async def send_test_notification_flex(self):
+        """發送測試 Flex Message"""
+        if not line_user_ids:
+            logger.warning("沒有LINE好友ID，無法發送測試訊息")
+            return
+        
+        try:
+            flex_container = self.flex_builder.create_test_notification_flex("🧪 LINE Bot Flex Message 測試成功！")
+            flex_message = FlexMessage(alt_text="系統測試通知", contents=flex_container)
+            
+            for user_id in line_user_ids:
+                push_message = PushMessageRequest(
+                    to=user_id,
+                    messages=[flex_message]
+                )
+                self.line_bot_api.push_message(push_message)
+            logger.info(f"成功發送測試 Flex Message 給 {len(line_user_ids)} 位好友")
+        except Exception as e:
+            logger.error(f"測試 Flex Message 發送失敗: {e}")
 
 # 初始化LINE通知器
 line_notifier = LineNotifier()
@@ -569,9 +657,8 @@ class TyphoonMonitor:
         
         # 只在狀態變化且變為DANGER時發送通知
         if current_status == "DANGER" and last_notification_status != "DANGER":
-            message = line_notifier.format_typhoon_status(result)
-            await line_notifier.push_to_all_friends(message)
-            logger.info("已發送LINE風險通知")
+            await line_notifier.push_typhoon_status_flex(result)
+            logger.info("已發送LINE風險 Flex Message 通知")
         
         # 更新上次通知狀態
         last_notification_status = current_status
@@ -637,6 +724,499 @@ class TyphoonMonitor:
         
         print("="*60)
 
+class FlexMessageBuilder:
+    """LINE Flex Message 建構器類別，用於創建各種視覺化通知訊息"""
+    
+    def __init__(self, base_url: str = None):
+        """
+        初始化 FlexMessageBuilder
+        
+        Args:
+            base_url: 應用程式的基本URL，用於生成連結
+        """
+        self.base_url = base_url or f"http://localhost:{SERVER_PORT}"
+    
+    def create_typhoon_status_flex(self, result: Dict) -> FlexContainer:
+        """
+        創建颱風狀態的 Flex Message
+        
+        Args:
+            result: 包含颱風監控結果的字典
+            
+        Returns:
+            FlexContainer: LINE Flex Message 容器
+        """
+        timestamp = datetime.fromisoformat(result["timestamp"].replace('Z', '+00:00'))
+        status_color = "#FF4757" if result["status"] == "DANGER" else "#2ED573"
+        status_icon = "🔴" if result["status"] == "DANGER" else "🟢"
+        status_text = "有風險" if result["status"] == "DANGER" else "無明顯風險"
+        
+        # 分類警告訊息
+        flight_warnings = [w for w in result["warnings"] if any(keyword in w for keyword in ['起飛', '抵達', '航班', '停飛', '延誤', '機場API'])]
+        weather_warnings = [w for w in result["warnings"] if w not in flight_warnings]
+        
+        # 風險等級顏色
+        def get_risk_color(risk_text: str) -> str:
+            if "高風險" in risk_text:
+                return "#FF4757"
+            elif "中風險" in risk_text:
+                return "#FFA726"
+            else:
+                return "#2ED573"
+        
+        # 構建警告區塊
+        warning_contents = []
+        
+        if flight_warnings:
+            warning_contents.append({
+                "type": "box",
+                "layout": "vertical",
+                "margin": "md",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "✈️ 金門機場即時狀況",
+                        "weight": "bold",
+                        "color": "#1976D2",
+                        "size": "sm"
+                    }
+                ] + [
+                    {
+                        "type": "text",
+                        "text": f"• {warning}",
+                        "size": "xs",
+                        "color": "#666666",
+                        "wrap": True,
+                        "margin": "xs"
+                    } for warning in flight_warnings[:3]  # 最多顯示3個警告
+                ]
+            })
+        
+        if weather_warnings:
+            warning_contents.append({
+                "type": "box",
+                "layout": "vertical",
+                "margin": "md",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "🌪️ 天氣警報",
+                        "weight": "bold",
+                        "color": "#F57C00",
+                        "size": "sm"
+                    }
+                ] + [
+                    {
+                        "type": "text",
+                        "text": f"• {warning}",
+                        "size": "xs",
+                        "color": "#666666",
+                        "wrap": True,
+                        "margin": "xs"
+                    } for warning in weather_warnings[:3]  # 最多顯示3個警告
+                ]
+            })
+        
+        if not result["warnings"]:
+            warning_contents.append({
+                "type": "box",
+                "layout": "vertical",
+                "margin": "md",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "✅ 目前無特殊警報",
+                        "color": "#2ED573",
+                        "size": "sm",
+                        "weight": "bold"
+                    }
+                ]
+            })
+        
+        flex_content = {
+            "type": "bubble",
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "🌀 颱風警訊播報",
+                        "weight": "bold",
+                        "size": "lg",
+                        "color": "#FFFFFF"
+                    },
+                    {
+                        "type": "text",
+                        "text": timestamp.strftime('%Y-%m-%d %H:%M'),
+                        "size": "xs",
+                        "color": "#FFFFFF",
+                        "margin": "xs"
+                    }
+                ],
+                "backgroundColor": status_color,
+                "paddingAll": "md"
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "box",
+                        "layout": "horizontal",
+                        "contents": [
+                            {
+                                "type": "text",
+                                "text": status_icon,
+                                "size": "xl",
+                                "flex": 0
+                            },
+                            {
+                                "type": "text",
+                                "text": f"警告狀態: {status_text}",
+                                "weight": "bold",
+                                "size": "md",
+                                "color": status_color,
+                                "margin": "sm",
+                                "flex": 1
+                            }
+                        ],
+                        "margin": "none"
+                    },
+                    {
+                        "type": "separator",
+                        "margin": "md"
+                    },
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "margin": "md",
+                        "contents": [
+                            {
+                                "type": "box",
+                                "layout": "horizontal",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "✈️",
+                                        "size": "sm",
+                                        "flex": 0
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": "7/6 金門→台南航班風險",
+                                        "size": "sm",
+                                        "color": "#666666",
+                                        "margin": "sm",
+                                        "flex": 1
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": result['travel_risk'],
+                                        "size": "sm",
+                                        "color": get_risk_color(result['travel_risk']),
+                                        "weight": "bold",
+                                        "align": "end",
+                                        "flex": 0
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "box",
+                                "layout": "horizontal",
+                                "margin": "sm",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "🏥",
+                                        "size": "sm",
+                                        "flex": 0
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": "7/7 台南體檢風險",
+                                        "size": "sm",
+                                        "color": "#666666",
+                                        "margin": "sm",
+                                        "flex": 1
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": result['checkup_risk'],
+                                        "size": "sm",
+                                        "color": get_risk_color(result['checkup_risk']),
+                                        "weight": "bold",
+                                        "align": "end",
+                                        "flex": 0
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ] + warning_contents
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "button",
+                        "action": {
+                            "type": "uri",
+                            "label": "查看詳細儀表板",
+                            "uri": self.base_url
+                        },
+                        "style": "primary",
+                        "color": "#1976D2"
+                    }
+                ],
+                "margin": "sm"
+            }
+        }
+        
+        return FlexContainer.from_dict(flex_content)
+    
+    def create_airport_status_flex(self, airport_data: Dict) -> FlexContainer:
+        """
+        創建機場狀態的 Flex Message
+        
+        Args:
+            airport_data: 包含機場資訊的字典
+            
+        Returns:
+            FlexContainer: LINE Flex Message 容器
+        """
+        departure_flights = airport_data.get('departure_flights', [])
+        arrival_flights = airport_data.get('arrival_flights', [])
+        warnings = airport_data.get('warnings', [])
+        last_updated = airport_data.get('last_updated', datetime.now().isoformat())
+        
+        timestamp = datetime.fromisoformat(last_updated.replace('Z', '+00:00'))
+        
+        # 構建航班資訊
+        flight_contents = []
+        
+        if warnings:
+            warning_color = "#FF4757"
+            for warning in warnings[:3]:  # 最多顯示3個警告
+                flight_contents.append({
+                    "type": "text",
+                    "text": f"⚠️ {warning}",
+                    "size": "xs",
+                    "color": warning_color,
+                    "wrap": True,
+                    "margin": "xs"
+                })
+        else:
+            flight_contents.append({
+                "type": "text",
+                "text": "✅ 航班狀況正常",
+                "size": "sm",
+                "color": "#2ED573",
+                "weight": "bold"
+            })
+        
+        # 添加航班統計
+        flight_contents.extend([
+            {
+                "type": "separator",
+                "margin": "md"
+            },
+            {
+                "type": "box",
+                "layout": "horizontal",
+                "margin": "md",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "✈️ 起飛航班",
+                        "size": "sm",
+                        "color": "#666666",
+                        "flex": 1
+                    },
+                    {
+                        "type": "text",
+                        "text": f"{len(departure_flights) if isinstance(departure_flights, list) else 0} 班",
+                        "size": "sm",
+                        "color": "#1976D2",
+                        "weight": "bold",
+                        "align": "end",
+                        "flex": 0
+                    }
+                ]
+            },
+            {
+                "type": "box",
+                "layout": "horizontal",
+                "margin": "sm",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "🛬 抵達航班",
+                        "size": "sm",
+                        "color": "#666666",
+                        "flex": 1
+                    },
+                    {
+                        "type": "text",
+                        "text": f"{len(arrival_flights) if isinstance(arrival_flights, list) else 0} 班",
+                        "size": "sm",
+                        "color": "#1976D2",
+                        "weight": "bold",
+                        "align": "end",
+                        "flex": 0
+                    }
+                ]
+            }
+        ])
+        
+        flex_content = {
+            "type": "bubble",
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "✈️ 金門機場監控",
+                        "weight": "bold",
+                        "size": "lg",
+                        "color": "#FFFFFF"
+                    },
+                    {
+                        "type": "text",
+                        "text": timestamp.strftime('%Y-%m-%d %H:%M'),
+                        "size": "xs",
+                        "color": "#FFFFFF",
+                        "margin": "xs"
+                    }
+                ],
+                "backgroundColor": "#1976D2",
+                "paddingAll": "md"
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": flight_contents
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "button",
+                        "action": {
+                            "type": "uri",
+                            "label": "查看機場詳細資訊",
+                            "uri": f"{self.base_url}/api/airport"
+                        },
+                        "style": "primary",
+                        "color": "#1976D2"
+                    }
+                ],
+                "margin": "sm"
+            }
+        }
+        
+        return FlexContainer.from_dict(flex_content)
+    
+    def create_test_notification_flex(self, message: str = "這是測試訊息") -> FlexContainer:
+        """
+        創建測試通知的 Flex Message
+        
+        Args:
+            message: 測試訊息內容
+            
+        Returns:
+            FlexContainer: LINE Flex Message 容器
+        """
+        timestamp = datetime.now()
+        
+        flex_content = {
+            "type": "bubble",
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "🧪 系統測試",
+                        "weight": "bold",
+                        "size": "lg",
+                        "color": "#FFFFFF"
+                    },
+                    {
+                        "type": "text",
+                        "text": timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                        "size": "xs",
+                        "color": "#FFFFFF",
+                        "margin": "xs"
+                    }
+                ],
+                "backgroundColor": "#9C27B0",
+                "paddingAll": "md"
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": message,
+                        "size": "md",
+                        "color": "#333333",
+                        "wrap": True
+                    },
+                    {
+                        "type": "separator",
+                        "margin": "md"
+                    },
+                    {
+                        "type": "text",
+                        "text": "✅ LINE Bot 連線正常\n📡 監控系統運作中\n🔔 通知功能正常",
+                        "size": "sm",
+                        "color": "#666666",
+                        "margin": "md"
+                    }
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "button",
+                        "action": {
+                            "type": "uri",
+                            "label": "返回監控儀表板",
+                            "uri": self.base_url
+                        },
+                        "style": "secondary"
+                    }
+                ],
+                "margin": "sm"
+            }
+        }
+        
+        return FlexContainer.from_dict(flex_content)
+    
+    def create_carousel_flex(self, bubbles: List[Dict]) -> FlexContainer:
+        """
+        創建輪播式 Flex Message
+        
+        Args:
+            bubbles: 包含多個 bubble 內容的列表
+            
+        Returns:
+            FlexContainer: LINE Flex Message 容器
+        """
+        flex_content = {
+            "type": "carousel",
+            "contents": bubbles
+        }
+        
+        return FlexContainer.from_dict(flex_content)
+
 # 建立監控器實例
 monitor = TyphoonMonitor()
 airport_monitor = AirportMonitor()
@@ -665,22 +1245,62 @@ def handle_message(event):
         line_user_ids.append(user_id)
         logger.info(f"新增LINE好友: {user_id}")
     
-    # 處理"颱風近況"關鍵字
+    # 處理不同關鍵字
     if "颱風近況" in message_text:
-        # 取得最新監控結果
-        result = asyncio.create_task(monitor.check_all_conditions())
-        # 註：在實際環境中，這裡需要使用異步處理
-        # 暫時使用同步方式回覆
-        current_result = {
-            "timestamp": datetime.now().isoformat(),
-            "warnings": [],  # 簡化處理，使用空警報
-            "status": "SAFE",
-            "travel_risk": "低風險",
-            "checkup_risk": "低風險"
-        }
+        # 使用異步方式處理（在實際環境中需要正確處理）
+        async def handle_typhoon_status():
+            try:
+                result = await monitor.check_all_conditions()
+                await line_notifier.reply_typhoon_status_flex(event.reply_token, result)
+            except Exception as e:
+                logger.error(f"處理颱風近況失敗: {e}")
+                # 回退到簡單回覆
+                await line_notifier.reply_message(event.reply_token, "系統暫時無法取得資料，請稍後再試。")
         
-        reply_message = line_notifier.format_typhoon_status(current_result)
-        asyncio.create_task(line_notifier.reply_message(event.reply_token, reply_message))
+        asyncio.create_task(handle_typhoon_status())
+    
+    elif "機場狀況" in message_text:
+        async def handle_airport_status():
+            try:
+                departure_info = await airport_monitor.get_departure_info()
+                arrival_info = await airport_monitor.get_arrival_info()
+                flight_warnings = await airport_monitor.check_flight_conditions()
+                
+                airport_data = {
+                    "departure_flights": departure_info,
+                    "arrival_flights": arrival_info,
+                    "warnings": flight_warnings,
+                    "last_updated": datetime.now().isoformat()
+                }
+                
+                await line_notifier.push_airport_status_flex(airport_data)
+            except Exception as e:
+                logger.error(f"處理機場狀況失敗: {e}")
+                await line_notifier.reply_message(event.reply_token, "無法取得機場資料，請稍後再試。")
+        
+        asyncio.create_task(handle_airport_status())
+    
+    elif "測試" in message_text:
+        async def handle_test():
+            try:
+                await line_notifier.send_test_notification_flex()
+            except Exception as e:
+                logger.error(f"發送測試訊息失敗: {e}")
+        
+        asyncio.create_task(handle_test())
+    
+    else:
+        # 預設回覆
+        help_message = """🌀 颱風警訊播報系統
+
+可用指令：
+• 颱風近況 - 查看完整監控狀況
+• 機場狀況 - 查看金門機場即時資訊  
+• 測試 - 發送測試訊息
+
+系統會在有風險時主動推送通知！"""
+        
+        asyncio.create_task(line_notifier.reply_message(event.reply_token, help_message))
 
 @app.post("/webhook")
 async def line_webhook(request: Request):
@@ -846,22 +1466,46 @@ async def get_line_friends():
 @app.post("/api/line/test-notification")
 async def send_test_notification():
     """發送測試通知給所有LINE好友"""
-    test_result = {
-        "timestamp": datetime.now().isoformat(),
-        "warnings": ["🧪 這是測試訊息"],
-        "status": "DANGER",
-        "travel_risk": "測試風險",
-        "checkup_risk": "測試風險"
-    }
-    
-    message = line_notifier.format_typhoon_status(test_result)
-    await line_notifier.push_to_all_friends(message)
+    await line_notifier.send_test_notification_flex()
     
     return {
-        "message": "測試通知已發送",
+        "message": "測試 Flex Message 已發送",
         "sent_to": len(line_user_ids),
         "friends": line_user_ids
     }
+
+@app.post("/api/line/test-airport-notification")
+async def send_test_airport_notification():
+    """發送機場狀況測試通知給所有LINE好友"""
+    try:
+        departure_info = await airport_monitor.get_departure_info()
+        arrival_info = await airport_monitor.get_arrival_info()
+        flight_warnings = await airport_monitor.check_flight_conditions()
+        
+        airport_data = {
+            "departure_flights": departure_info,
+            "arrival_flights": arrival_info,
+            "warnings": flight_warnings,
+            "last_updated": datetime.now().isoformat()
+        }
+        
+        await line_notifier.push_airport_status_flex(airport_data)
+        
+        return {
+            "message": "機場狀況 Flex Message 已發送",
+            "sent_to": len(line_user_ids),
+            "airport_data": {
+                "departure_count": len(departure_info) if isinstance(departure_info, list) else 0,
+                "arrival_count": len(arrival_info) if isinstance(arrival_info, list) else 0,
+                "warnings_count": len(flight_warnings)
+            }
+        }
+    except Exception as e:
+        logger.error(f"發送機場測試通知失敗: {e}")
+        return {
+            "error": "發送失敗",
+            "message": str(e)
+        }
 
 @app.get("/api/airport")
 async def get_airport_status():
@@ -887,11 +1531,22 @@ def main():
     print(f"- 旅行日期: {TRAVEL_DATE}")
     print(f"- 體檢日期: {CHECKUP_DATE}")
     print("- 機場監控: 金門機場 (KNH) 起降資訊")
+    print("- 通知方式: LINE Bot Flex Message (支援視覺化通知)")
     
     if not API_KEY:
         print("⚠️ 警告: 中央氣象署API KEY尚未設定")
     if not LINE_CHANNEL_ACCESS_TOKEN:
         print("⚠️ 警告: LINE ACCESS TOKEN尚未設定，LINE功能將無法使用")
+    
+    print("\n📱 LINE Bot 指令:")
+    print("- '颱風近況' - 查看完整監控狀況 (Flex Message)")
+    print("- '機場狀況' - 查看金門機場即時資訊 (Flex Message)")
+    print("- '測試' - 發送測試訊息 (Flex Message)")
+    
+    print("\n🔗 API 端點:")
+    print(f"- 監控儀表板: http://localhost:{SERVER_PORT}/")
+    print(f"- 測試 Flex 通知: POST http://localhost:{SERVER_PORT}/api/line/test-notification")
+    print(f"- 測試機場 Flex 通知: POST http://localhost:{SERVER_PORT}/api/line/test-airport-notification")
     
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=SERVER_PORT)
