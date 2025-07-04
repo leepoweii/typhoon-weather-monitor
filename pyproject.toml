@@ -1,0 +1,16 @@
+[project]
+name = "typhoon-monitor"
+version = "0.1.0"
+description = "颱風警訊播報系統 - 監控金門縣和台南市的颱風及天氣警報"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "httpx>=0.25.0",
+    "python-dotenv>=1.1.1",
+    "line-bot-sdk>=3.17.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
