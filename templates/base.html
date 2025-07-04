@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ title }}</title>
+    <meta charset="utf-8">
+    <meta http-equiv="refresh" content="60">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+        .status-safe { color: green; font-size: 24px; font-weight: bold; }
+        .status-danger { color: red; font-size: 24px; font-weight: bold; }
+        .warning-item { background: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 5px 0; border-radius: 5px; }
+        .risk-high { color: red; font-weight: bold; }
+        .risk-medium { color: orange; font-weight: bold; }
+        .risk-low { color: green; font-weight: bold; }
+        .update-time { color: #666; font-size: 14px; }
+        .explain-block { background: #e3f2fd; border-left: 5px solid #1976d2; padding: 16px; margin: 24px 0; border-radius: 8px; }
+        .explain-block h2 { margin-top: 0; color: #1976d2; }
+        .explain-block ul { margin: 0 0 0 1.5em; }
+        .raw-data-section { margin: 24px 0; }
+        .raw-data-block { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; margin: 16px 0; }
+        .raw-data-title { font-size: 18px; font-weight: bold; color: #495057; margin-bottom: 12px; display: flex; align-items: center; }
+        .raw-data-title span { margin-right: 8px; }
+        .data-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin: 12px 0; }
+        .data-item { background: white; border: 1px solid #e9ecef; border-radius: 6px; padding: 12px; }
+        .data-item-label { font-weight: bold; color: #6c757d; font-size: 14px; margin-bottom: 4px; }
+        .data-item-value { color: #212529; font-size: 16px; word-wrap: break-word; }
+        .typhoon-data { border-left: 4px solid #dc3545; }
+        .weather-data { border-left: 4px solid #28a745; }
+        .alert-data { border-left: 4px solid #ffc107; }
+        .no-data { color: #6c757d; font-style: italic; text-align: center; padding: 20px; }
+        .collapsible { cursor: pointer; background: none; border: none; width: 100%; text-align: left; font-size: 18px; font-weight: bold; color: #495057; }
+        .collapsible:hover { background-color: #f1f3f4; }
+        .collapsible.active { background-color: #e9ecef; }
+        .content { display: none; overflow: hidden; }
+        .content.show { display: block; }
+        .toggle-icon { float: right; transition: transform 0.3s; }
+        .toggle-icon.rotated { transform: rotate(90deg); }
+        .risk-explanation { background: #fff8e1; border: 1px solid #ffcc02; border-radius: 8px; padding: 16px; margin: 16px 0; }
+        .risk-explanation h3 { margin-top: 0; color: #f57c00; }
+        .disabled-notice { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; margin: 16px 0; color: #6c757d; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
